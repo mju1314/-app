@@ -1,8 +1,12 @@
 package com.example.expensetracker.ui.stats
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,10 +15,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,13 +47,20 @@ fun StatsRoute(
     StatsScreen(
         contentPadding = contentPadding,
         uiState = uiState,
+        onPreviousMonthClick = viewModel::showPreviousMonth,
+        onNextMonthClick = viewModel::showNextMonth,
+        onTrendWindowSelected = viewModel::selectTrendWindow,
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StatsScreen(
     contentPadding: PaddingValues,
     uiState: StatsUiState,
+    onPreviousMonthClick: () -> Unit,
+    onNextMonthClick: () -> Unit,
+    onTrendWindowSelected: (Int) -> Unit,
 ) {
     if (uiState.isLoading) {
         Row(
@@ -57,7 +75,7 @@ private fun StatsScreen(
         return
     }
 
-    androidx.compose.foundation.layout.Column(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding)
@@ -66,16 +84,88 @@ private fun StatsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         SectionCard(title = stringResource(id = R.string.stats_month_total_title)) {
-            Text(
-                text = uiState.monthLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onPreviousMonthClick) {
+                    Icon(
+                        imageVector = Icons.Filled.ChevronLeft,
+                        contentDescription = stringResource(id = R.string.stats_previous_month),
+                    )
+                }
+                Text(
+                    text = uiState.monthLabel,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                IconButton(
+                    onClick = onNextMonthClick,
+                    enabled = uiState.canNavigateToNextMonth,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.ChevronRight,
+                        contentDescription = stringResource(id = R.string.stats_next_month),
+                    )
+                }
+            }
             Text(
                 text = uiState.monthTotalText,
-                modifier = Modifier.padding(top = 4.dp),
+                modifier = Modifier.padding(top = 8.dp),
                 style = MaterialTheme.typography.headlineMedium,
             )
+            MetricHighlight(
+                modifier = Modifier.padding(top = 12.dp),
+                title = stringResource(id = R.string.stats_average_daily_title),
+            ) {
+                Text(
+                    text = uiState.averageDailyText,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = uiState.averageDailyHint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        SectionCard(title = stringResource(id = R.string.stats_top_category_title)) {
+            val topCategory = uiState.topCategory
+            if (topCategory == null) {
+                Text(
+                    text = stringResource(id = R.string.stats_top_category_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = topCategory.categoryName,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = topCategory.amountText,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                    Text(
+                        text = "${topCategory.ratioText} | ${
+                            stringResource(
+                                id = R.string.stats_transaction_count,
+                                topCategory.transactionCount,
+                            )
+                        }",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
 
         SectionCard(title = stringResource(id = R.string.stats_category_summary_title)) {
@@ -85,7 +175,7 @@ private fun StatsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             } else {
-                androidx.compose.foundation.layout.Column(
+                Column(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     uiState.categorySummaries.forEach { item ->
@@ -95,8 +185,39 @@ private fun StatsScreen(
             }
         }
 
-        SectionCard(title = stringResource(id = R.string.stats_recent_seven_days_title)) {
-            androidx.compose.foundation.layout.Column(
+        SectionCard(title = stringResource(id = R.string.stats_trend_title)) {
+            Text(
+                text = uiState.trendRangeLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf(7, 30).forEach { days ->
+                    FilterChip(
+                        selected = uiState.selectedTrendWindowDays == days,
+                        onClick = { onTrendWindowSelected(days) },
+                        label = {
+                            Text(
+                                text = stringResource(
+                                    id = if (days == 7) {
+                                        R.string.stats_trend_window_7
+                                    } else {
+                                        R.string.stats_trend_window_30
+                                    },
+                                ),
+                            )
+                        },
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.padding(top = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 uiState.recentDailyTrends.forEach { item ->
@@ -109,7 +230,7 @@ private fun StatsScreen(
 
 @Composable
 private fun CategorySummaryRow(item: StatsCategorySummaryUiModel) {
-    androidx.compose.foundation.layout.Column(
+    Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
@@ -129,7 +250,12 @@ private fun CategorySummaryRow(item: StatsCategorySummaryUiModel) {
         }
 
         Text(
-            text = stringResource(id = R.string.stats_transaction_count, item.transactionCount),
+            text = "${item.ratioText} | ${
+                stringResource(
+                    id = R.string.stats_transaction_count,
+                    item.transactionCount,
+                )
+            }",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -155,6 +281,31 @@ private fun CategorySummaryRow(item: StatsCategorySummaryUiModel) {
                         ),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun MetricHighlight(
+    modifier: Modifier = Modifier,
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            content()
         }
     }
 }

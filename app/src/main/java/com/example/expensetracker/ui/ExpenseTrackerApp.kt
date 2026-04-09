@@ -5,11 +5,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -73,13 +78,25 @@ fun ExpenseTrackerApp() {
             }
         },
     ) { paddingValues ->
+        val layoutDirection = LocalLayoutDirection.current
+        val contentPadding = PaddingValues(
+            start = paddingValues.calculateStartPadding(layoutDirection),
+            top = paddingValues.calculateTopPadding(),
+            end = paddingValues.calculateEndPadding(layoutDirection),
+            bottom = paddingValues.calculateBottomPadding() + if (showFab) {
+                FloatingActionButtonClearance
+            } else {
+                0.dp
+            },
+        )
+
         NavHost(
             navController = navController,
             startDestination = AppDestination.Home.route,
         ) {
             composable(AppDestination.Home.route) {
                 HomeRoute(
-                    contentPadding = paddingValues,
+                    contentPadding = contentPadding,
                     onRecordClick = { recordId ->
                         navController.navigate("record_detail/$recordId")
                     },
@@ -87,7 +104,7 @@ fun ExpenseTrackerApp() {
             }
             composable(AppDestination.Records.route) {
                 RecordsRoute(
-                    contentPadding = paddingValues,
+                    contentPadding = contentPadding,
                     onRecordClick = { recordId ->
                         navController.navigate("record_detail/$recordId")
                     },
@@ -98,22 +115,24 @@ fun ExpenseTrackerApp() {
                 arguments = listOf(navArgument("recordId") { type = NavType.LongType }),
             ) {
                 RecordDetailRoute(
-                    contentPadding = paddingValues,
+                    contentPadding = contentPadding,
                     onNavigateBack = { navController.popBackStack() },
                 )
             }
             composable(AppDestination.Stats.route) {
-                StatsRoute(contentPadding = paddingValues)
+                StatsRoute(contentPadding = contentPadding)
             }
             composable(AppDestination.Settings.route) {
-                SettingsRoute(contentPadding = paddingValues)
+                SettingsRoute(contentPadding = contentPadding)
             }
             composable(AppDestination.AddExpense.route) {
                 AddExpenseRoute(
-                    contentPadding = paddingValues,
+                    contentPadding = contentPadding,
                     onNavigateBack = { navController.popBackStack() },
                 )
             }
         }
     }
 }
+
+private val FloatingActionButtonClearance = 88.dp

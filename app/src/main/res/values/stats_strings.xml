@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="stats_average_daily_title">日均支出</string>
+    <string name="stats_top_category_title">Top 分类</string>
+    <string name="stats_top_category_empty">所选月份暂无分类支出</string>
+    <string name="stats_trend_title">支出趋势</string>
+    <string name="stats_trend_window_7">最近 7 天</string>
+    <string name="stats_trend_window_30">最近 30 天</string>
+    <string name="stats_previous_month">上一月</string>
+    <string name="stats_next_month">下一月</string>
+</resources>
