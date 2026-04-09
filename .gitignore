@@ -1,0 +1,17 @@
+*.iml
+.gradle/
+.gradle-user-home/
+/local.properties
+/.idea/
+/build/
+/captures/
+/.externalNativeBuild/
+/.cxx/
+app/build/
+*.apk
+*.ap_
+*.aab
+*.hprof
+*.log
+expense-tracker-export.csv
+*.csv
