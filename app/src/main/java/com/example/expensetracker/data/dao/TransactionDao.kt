@@ -112,6 +112,37 @@ interface TransactionDao {
             t.note AS note,
             t.spent_at AS spentAt,
             c.name AS categoryName,
+            p.name AS paymentMethodName
+        FROM transactions t
+        INNER JOIN categories c ON c.id = t.category_id
+        INNER JOIN payment_methods p ON p.id = t.payment_method_id
+        WHERE (:categoryId IS NULL OR t.category_id = :categoryId)
+          AND (:startTime IS NULL OR t.spent_at >= :startTime)
+          AND (:endTime IS NULL OR t.spent_at < :endTime)
+          AND (
+            :keyword = '' OR
+            IFNULL(t.note, '') LIKE '%' || :keyword || '%' OR
+            c.name LIKE '%' || :keyword || '%' OR
+            p.name LIKE '%' || :keyword || '%'
+          )
+        ORDER BY t.spent_at DESC, t.id DESC
+        """,
+    )
+    fun observeFilteredTransactions(
+        keyword: String,
+        categoryId: Long?,
+        startTime: Long?,
+        endTime: Long?,
+    ): Flow<List<RecentTransactionRow>>
+
+    @Query(
+        """
+        SELECT
+            t.id AS id,
+            t.amount AS amount,
+            t.note AS note,
+            t.spent_at AS spentAt,
+            c.name AS categoryName,
             p.name AS paymentMethodName,
             t.created_at AS createdAt,
             t.updated_at AS updatedAt

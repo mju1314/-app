@@ -1,8 +1,10 @@
-package com.example.expensetracker.ui.records
+﻿package com.example.expensetracker.ui.records
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,9 +12,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -35,6 +47,10 @@ fun RecordsRoute(
         contentPadding = contentPadding,
         uiState = uiState,
         onRecordClick = onRecordClick,
+        onKeywordChanged = viewModel::updateKeyword,
+        onCategorySelected = viewModel::selectCategory,
+        onRangeSelected = viewModel::selectRange,
+        onClearFilters = viewModel::clearFilters,
     )
 }
 
@@ -43,6 +59,10 @@ private fun RecordsScreen(
     contentPadding: PaddingValues,
     uiState: RecordsUiState,
     onRecordClick: (Long) -> Unit,
+    onKeywordChanged: (String) -> Unit,
+    onCategorySelected: (Long?) -> Unit,
+    onRangeSelected: (RecordsDateRange) -> Unit,
+    onClearFilters: () -> Unit,
 ) {
     if (uiState.isLoading) {
         Row(
@@ -57,22 +77,6 @@ private fun RecordsScreen(
         return
     }
 
-    if (uiState.groups.isEmpty()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = stringResource(id = R.string.empty_records),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        }
-        return
-    }
-
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -80,6 +84,25 @@ private fun RecordsScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            RecordsFilterCard(
+                uiState = uiState,
+                onKeywordChanged = onKeywordChanged,
+                onCategorySelected = onCategorySelected,
+                onRangeSelected = onRangeSelected,
+                onClearFilters = onClearFilters,
+            )
+        }
+
+        if (uiState.groups.isEmpty()) {
+            item {
+                EmptyRecordsState(
+                    text = stringResource(id = R.string.records_filter_empty),
+                )
+            }
+            return@LazyColumn
+        }
+
         items(uiState.groups) { group ->
             SectionCard(
                 title = stringResource(
@@ -122,6 +145,153 @@ private fun RecordsScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun EmptyRecordsState(text: String) {
+    SectionCard(title = stringResource(id = R.string.nav_records)) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun RecordsFilterCard(
+    uiState: RecordsUiState,
+    onKeywordChanged: (String) -> Unit,
+    onCategorySelected: (Long?) -> Unit,
+    onRangeSelected: (RecordsDateRange) -> Unit,
+    onClearFilters: () -> Unit,
+) {
+    val hasActiveFilters = uiState.keyword.isNotBlank() ||
+        uiState.selectedCategoryId != null ||
+        uiState.selectedRange != RecordsDateRange.THIS_MONTH
+
+    val activeSummary = buildList {
+        if (uiState.keyword.isNotBlank()) add(uiState.keyword)
+        uiState.selectedCategoryName?.let(::add)
+        if (uiState.selectedRange != RecordsDateRange.THIS_MONTH) {
+            add(stringResource(id = uiState.selectedRange.labelResId))
+        }
+    }.joinToString(separator = " · ")
+
+    SectionCard(title = stringResource(id = R.string.records_filter_title)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            shape = MaterialTheme.shapes.large,
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                OutlinedTextField(
+                    value = uiState.keyword,
+                    onValueChange = onKeywordChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text(text = stringResource(id = R.string.records_filter_keyword_hint))
+                    },
+                    singleLine = true,
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = null,
+                        )
+                    },
+                    trailingIcon = {
+                        if (uiState.keyword.isNotBlank()) {
+                            IconButton(onClick = { onKeywordChanged("") }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = null,
+                                )
+                            }
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                )
+
+                FilterSection(label = stringResource(id = R.string.records_filter_range_label)) {
+                    uiState.availableRanges.forEach { range ->
+                        FilterChip(
+                            selected = uiState.selectedRange == range,
+                            onClick = { onRangeSelected(range) },
+                            label = { Text(text = stringResource(id = range.labelResId)) },
+                        )
+                    }
+                }
+
+                FilterSection(label = stringResource(id = R.string.records_filter_category_label)) {
+                    FilterChip(
+                        selected = uiState.selectedCategoryId == null,
+                        onClick = { onCategorySelected(null) },
+                        label = { Text(text = stringResource(id = R.string.records_filter_category_all)) },
+                    )
+                    uiState.categoryOptions.forEach { option ->
+                        FilterChip(
+                            selected = uiState.selectedCategoryId == option.id,
+                            onClick = { onCategorySelected(option.id) },
+                            label = { Text(text = option.label) },
+                        )
+                    }
+                }
+
+                if (hasActiveFilters) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = activeSummary,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            TextButton(onClick = onClearFilters) {
+                                Text(text = stringResource(id = R.string.records_filter_clear))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FilterSection(
+    label: String,
+    content: @Composable () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            content()
         }
     }
 }

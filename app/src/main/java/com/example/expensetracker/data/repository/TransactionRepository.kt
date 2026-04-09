@@ -22,6 +22,19 @@ class TransactionRepository @Inject constructor(
     fun observeAllTransactions(): Flow<List<RecentTransactionRow>> =
         transactionDao.observeAllTransactions()
 
+    fun observeFilteredTransactions(
+        keyword: String,
+        categoryId: Long?,
+        startTime: Long?,
+        endTime: Long?,
+    ): Flow<List<RecentTransactionRow>> =
+        transactionDao.observeFilteredTransactions(
+            keyword = keyword.trim(),
+            categoryId = categoryId,
+            startTime = startTime,
+            endTime = endTime,
+        )
+
     fun observeRecentTransactions(limit: Int = 10): Flow<List<RecentTransactionRow>> =
         transactionDao.observeRecentTransactions(limit)
 
