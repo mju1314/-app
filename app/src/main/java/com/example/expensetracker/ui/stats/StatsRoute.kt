@@ -1,34 +1,45 @@
 package com.example.expensetracker.ui.stats
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -36,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.expensetracker.R
+import androidx.compose.ui.text.input.KeyboardType
+import java.time.LocalDate
 import com.example.expensetracker.ui.components.SectionCard
 
 @Composable
@@ -49,6 +62,7 @@ fun StatsRoute(
         uiState = uiState,
         onPreviousMonthClick = viewModel::showPreviousMonth,
         onNextMonthClick = viewModel::showNextMonth,
+        onMonthSelected = viewModel::selectMonth,
         onTrendWindowSelected = viewModel::selectTrendWindow,
     )
 }
@@ -60,8 +74,11 @@ private fun StatsScreen(
     uiState: StatsUiState,
     onPreviousMonthClick: () -> Unit,
     onNextMonthClick: () -> Unit,
+    onMonthSelected: (Int, Int) -> Unit,
     onTrendWindowSelected: (Int) -> Unit,
 ) {
+    var showMonthPicker by remember { mutableStateOf(false) }
+
     if (uiState.isLoading) {
         Row(
             modifier = Modifier
@@ -95,10 +112,21 @@ private fun StatsScreen(
                         contentDescription = stringResource(id = R.string.stats_previous_month),
                     )
                 }
-                Text(
-                    text = uiState.monthLabel,
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                Row(
+                    modifier = Modifier.clickable { showMonthPicker = true },
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = uiState.monthLabel,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.CalendarMonth,
+                        contentDescription = stringResource(id = R.string.stats_select_month),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
                 IconButton(
                     onClick = onNextMonthClick,
                     enabled = uiState.canNavigateToNextMonth,
@@ -109,6 +137,11 @@ private fun StatsScreen(
                     )
                 }
             }
+            Text(
+                text = stringResource(id = R.string.stats_month_picker_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(
                 text = uiState.monthTotalText,
                 modifier = Modifier.padding(top = 8.dp),
@@ -175,9 +208,7 @@ private fun StatsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             } else {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     uiState.categorySummaries.forEach { item ->
                         CategorySummaryRow(item = item)
                     }
@@ -226,13 +257,23 @@ private fun StatsScreen(
             }
         }
     }
+
+    if (showMonthPicker) {
+        MonthPickerDialog(
+            selectedYear = uiState.selectedYear,
+            selectedMonth = uiState.selectedMonth,
+            onDismiss = { showMonthPicker = false },
+            onConfirm = { year, month ->
+                onMonthSelected(year, month)
+                showMonthPicker = false
+            },
+        )
+    }
 }
 
 @Composable
 private fun CategorySummaryRow(item: StatsCategorySummaryUiModel) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -353,6 +394,74 @@ private fun TrendRow(item: StatsTrendPointUiModel) {
         )
     }
 }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MonthPickerDialog(
+    selectedYear: Int,
+    selectedMonth: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Int) -> Unit,
+) {
+    val currentDate = LocalDate.now()
+    var draftYearText by remember(selectedYear) { mutableStateOf(selectedYear.toString()) }
+    var draftMonth by remember(selectedMonth) { mutableIntStateOf(selectedMonth) }
+    val draftYear = draftYearText.toIntOrNull()
+    val isValidSelection = draftYear != null &&
+        draftYear in 1..currentDate.year &&
+        !(draftYear == currentDate.year && draftMonth > currentDate.monthValue)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(id = R.string.stats_select_month)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    text = stringResource(id = R.string.stats_month_picker_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = draftYearText,
+                    onValueChange = { value ->
+                        draftYearText = value.filter(Char::isDigit).take(4)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(text = stringResource(id = R.string.stats_year_input_label)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    (1..12).forEach { month ->
+                        FilterChip(
+                            selected = draftMonth == month,
+                            onClick = { draftMonth = month },
+                            label = { Text(text = month.toMonthLabel()) },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(checkNotNull(draftYear), draftMonth) },
+                enabled = isValidSelection,
+            ) {
+                Text(text = stringResource(id = R.string.action_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(id = R.string.action_cancel))
+            }
+        },
+    )
+}
+
+private fun Int.toMonthLabel(): String = toString().padStart(2, '0')
 
 private fun Float.visibleBarFraction(): Float =
     when {

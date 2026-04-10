@@ -8,4 +8,7 @@
     <string name="stats_trend_window_30">最近 30 天</string>
     <string name="stats_previous_month">上一月</string>
     <string name="stats_next_month">下一月</string>
+    <string name="stats_select_month">选择月份</string>
+    <string name="stats_month_picker_hint">点击月份可直接跳转到指定年月</string>
+    <string name="stats_year_input_label">年份</string>
 </resources>

@@ -2,6 +2,8 @@ package com.example.expensetracker.ui.stats
 
 data class StatsUiState(
     val monthLabel: String = "",
+    val selectedYear: Int = 0,
+    val selectedMonth: Int = 0,
     val monthTotalText: String = "",
     val averageDailyText: String = "",
     val averageDailyHint: String = "",

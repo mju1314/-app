@@ -101,6 +101,15 @@ class StatsViewModel @Inject constructor(
         }
     }
 
+    fun selectMonth(year: Int, month: Int) {
+        if (month !in 1..12) return
+        if (year !in 1..currentMonth.year) return
+
+        val targetMonth = LocalDate.of(year, month, 1)
+        if (targetMonth.isAfter(currentMonth)) return
+        selectedMonth.value = targetMonth
+    }
+
     private fun buildUiState(
         query: StatsQuery,
         monthTotal: Long,
@@ -127,6 +136,8 @@ class StatsViewModel @Inject constructor(
 
         return StatsUiState(
             monthLabel = query.month.format(monthFormatter),
+            selectedYear = query.month.year,
+            selectedMonth = query.month.monthValue,
             monthTotalText = CurrencyFormatter.formatCent(monthTotal, query.currencyCode),
             averageDailyText = CurrencyFormatter.formatCent(averageDailyAmount, query.currencyCode),
             averageDailyHint = query.month.toAverageDailyHint(today),
