@@ -54,33 +54,34 @@ class RecordDetailViewModel @Inject constructor(
             )
         }
 
+        originalEntity = TransactionEntity(
+            id = detail.id,
+            amount = detail.amount,
+            categoryId = detail.categoryId,
+            paymentMethodId = detail.paymentMethodId,
+            note = detail.note,
+            spentAt = detail.spentAt,
+            createdAt = detail.createdAt,
+            updatedAt = detail.updatedAt,
+        )
+
         if (!hasInitializedForm) {
             hasInitializedForm = true
-            originalEntity = TransactionEntity(
-                id = detail.id,
-                amount = detail.amount,
-                categoryId = detail.categoryId,
-                paymentMethodId = detail.paymentMethodId,
-                note = detail.note,
-                spentAt = detail.spentAt,
-                createdAt = detail.createdAt,
-                updatedAt = detail.updatedAt,
-            )
             formState.value = currentState.copy(
                 transactionId = detail.id,
                 amount = detail.amount.toPlainAmount(),
                 selectedCategoryId = detail.categoryId,
                 selectedPaymentMethodId = detail.paymentMethodId,
                 note = detail.note.orEmpty(),
+                spentAtMillis = detail.spentAt,
                 spentAtText = DateFormats.formatDateTime(detail.spentAt),
                 isLoading = false,
                 errorMessageResId = null,
             )
         }
 
-        formState.value.copy(
+        currentState.copy(
             transactionId = detail.id,
-            spentAtText = DateFormats.formatDateTime(detail.spentAt),
             categoryOptions = categoryOptions,
             paymentMethodOptions = paymentMethodOptions,
             isLoading = false,
@@ -101,6 +102,14 @@ class RecordDetailViewModel @Inject constructor(
 
     fun updateNote(value: String) {
         formState.value = formState.value.copy(note = value, errorMessageResId = null)
+    }
+
+    fun updateSpentAt(timestamp: Long) {
+        formState.value = formState.value.copy(
+            spentAtMillis = timestamp,
+            spentAtText = DateFormats.formatDateTime(timestamp),
+            errorMessageResId = null,
+        )
     }
 
     fun selectCategory(categoryId: Long) {
@@ -137,6 +146,7 @@ class RecordDetailViewModel @Inject constructor(
                     categoryId = currentState.selectedCategoryId!!,
                     paymentMethodId = currentState.selectedPaymentMethodId!!,
                     note = currentState.note.trim().ifBlank { null },
+                    spentAt = currentState.spentAtMillis,
                     updatedAt = System.currentTimeMillis(),
                 ),
             )

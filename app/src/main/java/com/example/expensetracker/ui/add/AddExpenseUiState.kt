@@ -9,6 +9,7 @@ data class AddExpenseUiState(
     val selectedPaymentMethodId: Long? = null,
     val selectedPaymentMethodName: String? = null,
     val note: String = "",
+    val spentAtMillis: Long = 0L,
     val spentAtText: String = "",
     val categoryOptions: List<SelectOptionUiModel> = emptyList(),
     val paymentMethodOptions: List<SelectOptionUiModel> = emptyList(),

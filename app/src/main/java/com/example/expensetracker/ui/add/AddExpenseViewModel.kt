@@ -28,11 +28,7 @@ class AddExpenseViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
 ) : ViewModel() {
-    private val formState = MutableStateFlow(
-        AddExpenseUiState(
-            spentAtText = DateFormats.formatDateTime(System.currentTimeMillis()),
-        ),
-    )
+    private val formState = MutableStateFlow(createInitialState())
 
     val uiState: StateFlow<AddExpenseUiState> = combine(
         formState,
@@ -91,6 +87,14 @@ class AddExpenseViewModel @Inject constructor(
         )
     }
 
+    fun updateSpentAt(timestamp: Long) {
+        formState.value = formState.value.copy(
+            spentAtMillis = timestamp,
+            spentAtText = DateFormats.formatDateTime(timestamp),
+            errorMessageResId = null,
+        )
+    }
+
     fun selectCategory(categoryId: Long) {
         formState.value = formState.value.copy(
             selectedCategoryId = categoryId,
@@ -134,18 +138,22 @@ class AddExpenseViewModel @Inject constructor(
                     categoryId = selectedCategoryId,
                     paymentMethodId = selectedPaymentMethodId,
                     note = currentState.note.trim().ifBlank { null },
-                    spentAt = now,
+                    spentAt = currentState.spentAtMillis,
                     createdAt = now,
                     updatedAt = now,
                 ),
             )
             userPreferencesRepository.setLastUsedPaymentMethodId(selectedPaymentMethodId)
-            formState.value = AddExpenseUiState(
-                spentAtText = DateFormats.formatDateTime(System.currentTimeMillis()),
-            )
+            formState.value = createInitialState()
             onSuccess()
         }
     }
+
+    private fun createInitialState(now: Long = System.currentTimeMillis()): AddExpenseUiState =
+        AddExpenseUiState(
+            spentAtMillis = now,
+            spentAtText = DateFormats.formatDateTime(now),
+        )
 
     private fun String.toAmountInCent(): Long? {
         if (isBlank()) return null

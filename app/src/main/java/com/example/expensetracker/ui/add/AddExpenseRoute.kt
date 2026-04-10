@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.expensetracker.R
+import com.example.expensetracker.ui.components.EditableDateTimeField
 import com.example.expensetracker.ui.components.SectionCard
 
 @Composable
@@ -42,6 +43,7 @@ fun AddExpenseRoute(
         onNavigateBack = onNavigateBack,
         onAmountChanged = viewModel::updateAmount,
         onNoteChanged = viewModel::updateNote,
+        onSpentAtChanged = viewModel::updateSpentAt,
         onCategorySelected = viewModel::selectCategory,
         onPaymentMethodSelected = viewModel::selectPaymentMethod,
         onSaveClick = {
@@ -58,6 +60,7 @@ private fun AddExpenseScreen(
     onNavigateBack: () -> Unit,
     onAmountChanged: (String) -> Unit,
     onNoteChanged: (String) -> Unit,
+    onSpentAtChanged: (Long) -> Unit,
     onCategorySelected: (Long) -> Unit,
     onPaymentMethodSelected: (Long) -> Unit,
     onSaveClick: () -> Unit,
@@ -115,7 +118,11 @@ private fun AddExpenseScreen(
                     title = stringResource(id = R.string.label_spent_at),
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(text = uiState.spentAtText)
+                    EditableDateTimeField(
+                        timestamp = uiState.spentAtMillis,
+                        valueText = uiState.spentAtText,
+                        onTimestampSelected = onSpentAtChanged,
+                    )
                 }
                 SectionCard(
                     title = stringResource(id = R.string.label_payment_method),
