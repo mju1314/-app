@@ -1,4 +1,4 @@
-﻿package com.example.expensetracker.ui.records
+package com.example.expensetracker.ui.records
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,8 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -27,9 +30,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -172,99 +179,152 @@ private fun RecordsFilterCard(
         uiState.selectedCategoryId != null ||
         uiState.selectedRange != RecordsDateRange.THIS_MONTH
 
+    var expanded by remember(hasActiveFilters) { mutableStateOf(hasActiveFilters) }
+
     val activeSummary = buildList {
         if (uiState.keyword.isNotBlank()) add(uiState.keyword)
         uiState.selectedCategoryName?.let(::add)
         if (uiState.selectedRange != RecordsDateRange.THIS_MONTH) {
             add(stringResource(id = uiState.selectedRange.labelResId))
         }
-    }.joinToString(separator = " · ")
+    }.joinToString(separator = " | ")
+
+    val collapsedSummary = when {
+        activeSummary.isNotBlank() -> activeSummary
+        else -> stringResource(id = R.string.records_filter_collapsed_summary)
+    }
 
     SectionCard(title = stringResource(id = R.string.records_filter_title)) {
         Surface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded },
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
             shape = MaterialTheme.shapes.large,
         ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedTextField(
-                    value = uiState.keyword,
-                    onValueChange = onKeywordChanged,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = {
-                        Text(text = stringResource(id = R.string.records_filter_keyword_hint))
-                    },
-                    singleLine = true,
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.Search,
-                            contentDescription = null,
-                        )
-                    },
-                    trailingIcon = {
-                        if (uiState.keyword.isNotBlank()) {
-                            IconButton(onClick = { onKeywordChanged("") }) {
-                                Icon(
-                                    imageVector = Icons.Filled.Close,
-                                    contentDescription = null,
-                                )
-                            }
-                        }
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                )
-
-                FilterSection(label = stringResource(id = R.string.records_filter_range_label)) {
-                    uiState.availableRanges.forEach { range ->
-                        FilterChip(
-                            selected = uiState.selectedRange == range,
-                            onClick = { onRangeSelected(range) },
-                            label = { Text(text = stringResource(id = range.labelResId)) },
-                        )
-                    }
-                }
-
-                FilterSection(label = stringResource(id = R.string.records_filter_category_label)) {
-                    FilterChip(
-                        selected = uiState.selectedCategoryId == null,
-                        onClick = { onCategorySelected(null) },
-                        label = { Text(text = stringResource(id = R.string.records_filter_category_all)) },
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.records_filter_title),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    uiState.categoryOptions.forEach { option ->
-                        FilterChip(
-                            selected = uiState.selectedCategoryId == option.id,
-                            onClick = { onCategorySelected(option.id) },
-                            label = { Text(text = option.label) },
-                        )
-                    }
+                    Text(
+                        text = collapsedSummary,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = stringResource(id = R.string.records_filter_expand),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
-                if (hasActiveFilters) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                        shape = MaterialTheme.shapes.medium,
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+        if (expanded) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                shape = MaterialTheme.shapes.large,
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    OutlinedTextField(
+                        value = uiState.keyword,
+                        onValueChange = onKeywordChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
                             Text(
-                                text = activeSummary,
-                                modifier = Modifier.weight(1f),
+                                text = stringResource(id = R.string.records_filter_keyword_hint),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                            TextButton(onClick = onClearFilters) {
-                                Text(text = stringResource(id = R.string.records_filter_clear))
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(20.dp),
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = null,
+                            )
+                        },
+                        trailingIcon = {
+                            if (uiState.keyword.isNotBlank()) {
+                                IconButton(onClick = { onKeywordChanged("") }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = null,
+                                    )
+                                }
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        ),
+                    )
+
+                    FilterSection(label = stringResource(id = R.string.records_filter_range_label)) {
+                        uiState.availableRanges.forEach { range ->
+                            FilterChip(
+                                selected = uiState.selectedRange == range,
+                                onClick = { onRangeSelected(range) },
+                                label = { Text(text = stringResource(id = range.labelResId)) },
+                            )
+                        }
+                    }
+
+                    FilterSection(label = stringResource(id = R.string.records_filter_category_label)) {
+                        FilterChip(
+                            selected = uiState.selectedCategoryId == null,
+                            onClick = { onCategorySelected(null) },
+                            label = { Text(text = stringResource(id = R.string.records_filter_category_all)) },
+                        )
+                        uiState.categoryOptions.forEach { option ->
+                            FilterChip(
+                                selected = uiState.selectedCategoryId == option.id,
+                                onClick = { onCategorySelected(option.id) },
+                                label = { Text(text = option.label) },
+                            )
+                        }
+                    }
+
+                    if (hasActiveFilters) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                            shape = MaterialTheme.shapes.medium,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = activeSummary,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                TextButton(onClick = onClearFilters) {
+                                    Text(text = stringResource(id = R.string.records_filter_clear))
+                                }
                             }
                         }
                     }
