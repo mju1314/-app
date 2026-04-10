@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,57 +7,76 @@ plugins {
     alias(libs.plugins.hilt.android)
 }
 
+val keystoreProperties = Properties().apply {
+      val file = rootProject.file("keystore.properties")
+      if (file.exists()) {
+          file.inputStream().use(::load)
+      }
+  }
+
 android {
-    namespace = "com.example.expensetracker"
-    compileSdk = 34
+      namespace = "com.example.expensetracker"
+      compileSdk = 34
 
-    defaultConfig {
-        applicationId = "com.example.expensetracker"
-        minSdk = 26
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+      defaultConfig {
+          applicationId = "com.example.expensetracker"
+          minSdk = 26
+          targetSdk = 34
+          versionCode = 1
+          versionName = "1.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary = true
-        }
-    }
+          testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+          vectorDrawables {
+              useSupportLibrary = true
+          }
+      }
 
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
-        }
-    }
+      signingConfigs {
+          create("release") {
+              if (keystoreProperties.isNotEmpty()) {
+                  storeFile = file(keystoreProperties["storeFile"] as String)
+                  storePassword = keystoreProperties["storePassword"] as String
+                  keyAlias = keystoreProperties["keyAlias"] as String
+                  keyPassword = keystoreProperties["keyPassword"] as String
+              }
+          }
+      }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+      buildTypes {
+          release {
+              signingConfig = signingConfigs.getByName("release")
+              isMinifyEnabled = false
+              proguardFiles(
+                  getDefaultProguardFile("proguard-android-optimize.txt"),
+                  "proguard-rules.pro",
+              )
+          }
+      }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+      compileOptions {
+          sourceCompatibility = JavaVersion.VERSION_17
+          targetCompatibility = JavaVersion.VERSION_17
+      }
 
-    buildFeatures {
-        compose = true
-        buildConfig = true
-    }
+      kotlinOptions {
+          jvmTarget = "17"
+      }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
-    }
+      buildFeatures {
+          compose = true
+          buildConfig = true
+      }
 
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-    }
-}
+      composeOptions {
+          kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
+      }
+
+      packaging {
+          resources {
+              excludes += "/META-INF/{AL2.0,LGPL2.1}"
+          }
+      }
+  }
 
 kapt {
     correctErrorTypes = true
