@@ -1,5 +1,6 @@
 package com.example.expensetracker.ui.add
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,15 +19,17 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.AssistChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.expensetracker.R
+import com.example.expensetracker.data.entity.TransactionEntity
+import com.example.expensetracker.ui.common.CategoryIcons
 import com.example.expensetracker.ui.components.EditableDateTimeField
 import com.example.expensetracker.ui.components.SectionCard
 
@@ -37,17 +40,35 @@ fun AddExpenseRoute(
     viewModel: AddExpenseViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val warningMessage = stringResource(id = R.string.warning_balance_negative)
+    val budgetExceededTotal = stringResource(id = R.string.budget_exceeded_total)
+    val budgetExceededCategory = stringResource(id = R.string.budget_exceeded_category)
     AddExpenseScreen(
         contentPadding = contentPadding,
         uiState = uiState,
         onNavigateBack = onNavigateBack,
+        onTypeChanged = viewModel::updateTransactionType,
         onAmountChanged = viewModel::updateAmount,
         onNoteChanged = viewModel::updateNote,
         onSpentAtChanged = viewModel::updateSpentAt,
         onCategorySelected = viewModel::selectCategory,
-        onPaymentMethodSelected = viewModel::selectPaymentMethod,
+        onAccountSelected = viewModel::selectAccount,
         onSaveClick = {
-            viewModel.saveExpense(onSuccess = onNavigateBack)
+            viewModel.saveExpense(
+                onSuccess = onNavigateBack,
+                onBalanceWarning = {
+                    Toast.makeText(context, warningMessage, Toast.LENGTH_LONG).show()
+                },
+                onBudgetExceeded = { categoryName ->
+                    val message = if (categoryName.isEmpty()) {
+                        budgetExceededTotal
+                    } else {
+                        budgetExceededCategory.replace("%1\$s", categoryName)
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                },
+            )
         },
     )
 }
@@ -58,17 +79,25 @@ private fun AddExpenseScreen(
     contentPadding: PaddingValues,
     uiState: AddExpenseUiState,
     onNavigateBack: () -> Unit,
+    onTypeChanged: (Int) -> Unit,
     onAmountChanged: (String) -> Unit,
     onNoteChanged: (String) -> Unit,
     onSpentAtChanged: (Long) -> Unit,
     onCategorySelected: (Long) -> Unit,
-    onPaymentMethodSelected: (Long) -> Unit,
+    onAccountSelected: (Long?) -> Unit,
     onSaveClick: () -> Unit,
 ) {
+    val isIncome = uiState.transactionType == TransactionEntity.TYPE_INCOME
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(text = stringResource(id = R.string.title_add_expense)) },
+                title = {
+                    Text(
+                        text = stringResource(
+                            id = if (isIncome) R.string.title_add_income else R.string.title_add_expense,
+                        ),
+                    )
+                },
                 navigationIcon = {
                     TextButton(onClick = onNavigateBack) {
                         Text(text = stringResource(id = R.string.action_back))
@@ -86,6 +115,22 @@ private fun AddExpenseScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = !isIncome,
+                    onClick = { onTypeChanged(TransactionEntity.TYPE_EXPENSE) },
+                    label = { Text(text = stringResource(id = R.string.transaction_type_expense)) },
+                )
+                FilterChip(
+                    selected = isIncome,
+                    onClick = { onTypeChanged(TransactionEntity.TYPE_INCOME) },
+                    label = { Text(text = stringResource(id = R.string.transaction_type_income)) },
+                )
+            }
+
             SectionCard(title = stringResource(id = R.string.label_amount)) {
                 OutlinedTextField(
                     value = uiState.amount,
@@ -124,22 +169,21 @@ private fun AddExpenseScreen(
                         onTimestampSelected = onSpentAtChanged,
                     )
                 }
-                SectionCard(
-                    title = stringResource(id = R.string.label_payment_method),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = uiState.selectedPaymentMethodName
-                                ?: stringResource(id = R.string.hint_select_payment_method),
-                        )
-                        if (uiState.paymentMethodOptions.isEmpty()) {
-                            Text(text = stringResource(id = R.string.empty_payment_methods))
-                        } else {
-                            uiState.paymentMethodOptions.forEach { option ->
+                if (uiState.accountOptions.isNotEmpty()) {
+                    SectionCard(
+                        title = stringResource(id = R.string.label_account),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = uiState.selectedAccountId == null,
+                                onClick = { onAccountSelected(null) },
+                                label = { Text(text = stringResource(id = R.string.label_no_account)) },
+                            )
+                            uiState.accountOptions.forEach { option ->
                                 FilterChip(
-                                    selected = option.id == uiState.selectedPaymentMethodId,
-                                    onClick = { onPaymentMethodSelected(option.id) },
+                                    selected = option.id == uiState.selectedAccountId,
+                                    onClick = { onAccountSelected(option.id) },
                                     label = { Text(text = option.label) },
                                 )
                             }
@@ -197,10 +241,11 @@ private fun FlowChipRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 rowItems.forEach { option ->
+                    val emoji = CategoryIcons.getEmoji(option.icon)
                     FilterChip(
                         selected = option.id == selectedId,
                         onClick = { onSelected(option.id) },
-                        label = { Text(text = option.label) },
+                        label = { Text(text = "$emoji ${option.label}") },
                     )
                 }
             }

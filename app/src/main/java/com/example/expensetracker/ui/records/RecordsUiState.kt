@@ -8,6 +8,11 @@ data class RecordsUiState(
     val selectedCategoryId: Long? = null,
     val selectedCategoryName: String? = null,
     val categoryOptions: List<RecordFilterOptionUiModel> = emptyList(),
+    val selectedAccountId: Long? = null,
+    val selectedAccountName: String? = null,
+    val accountOptions: List<RecordFilterOptionUiModel> = emptyList(),
+    val minAmountText: String = "",
+    val maxAmountText: String = "",
     val selectedRange: RecordsDateRange = RecordsDateRange.ALL,
     val availableRanges: List<RecordsDateRange> = RecordsDateRange.entries,
     val groups: List<RecordDayGroupUiModel> = emptyList(),
@@ -23,15 +28,16 @@ data class RecordDayGroupUiModel(
 
 data class RecordListItemUiModel(
     val id: Long,
+    val type: Int = 0,
     val title: String,
-    @StringRes val subtitleResId: Int = R.string.records_item_subtitle,
-    val subtitleArgs: List<String> = emptyList(),
+    val subtitle: String,
     val amountText: String,
 )
 
 data class RecordFilterOptionUiModel(
     val id: Long,
     val label: String,
+    val icon: String = "",
 )
 
 enum class RecordsDateRange(

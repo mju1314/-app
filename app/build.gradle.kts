@@ -14,6 +14,12 @@ val keystoreProperties = Properties().apply {
       }
   }
 
+val resolvedReleaseKeystore = sequenceOf(
+    keystoreProperties.getProperty("storeFile")?.takeIf { it.isNotBlank() }?.let(::file),
+    rootProject.file(".keystore/expense-tracker-release.jks"),
+    File(System.getProperty("user.home"), ".keystore/expense-tracker-release.jks"),
+).filterNotNull().firstOrNull { it.exists() }
+
 android {
       namespace = "com.example.expensetracker"
       compileSdk = 34
@@ -22,8 +28,8 @@ android {
           applicationId = "com.example.expensetracker"
           minSdk = 26
           targetSdk = 34
-          versionCode = 1
-          versionName = "1.0"
+          versionCode = 2
+          versionName = "1.1.0"
 
           testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
           vectorDrawables {
@@ -33,18 +39,20 @@ android {
 
       signingConfigs {
           create("release") {
-              if (keystoreProperties.isNotEmpty()) {
-                  storeFile = file(keystoreProperties["storeFile"] as String)
-                  storePassword = keystoreProperties["storePassword"] as String
-                  keyAlias = keystoreProperties["keyAlias"] as String
-                  keyPassword = keystoreProperties["keyPassword"] as String
+              if (resolvedReleaseKeystore != null && keystoreProperties.isNotEmpty()) {
+                  storeFile = resolvedReleaseKeystore
+                  storePassword = keystoreProperties.getProperty("storePassword")
+                  keyAlias = keystoreProperties.getProperty("keyAlias")
+                  keyPassword = keystoreProperties.getProperty("keyPassword")
               }
           }
       }
 
       buildTypes {
           release {
-              signingConfig = signingConfigs.getByName("release")
+              if (resolvedReleaseKeystore != null && keystoreProperties.isNotEmpty()) {
+                  signingConfig = signingConfigs.getByName("release")
+              }
               isMinifyEnabled = false
               proguardFiles(
                   getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -80,6 +88,11 @@ android {
 
 kapt {
     correctErrorTypes = true
+    arguments {
+        arg("room.schemaLocation", "$projectDir/schemas")
+        arg("room.incremental", "true")
+        arg("room.expandProjection", "true")
+    }
 }
 
 dependencies {

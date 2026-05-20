@@ -2,4 +2,9 @@
 <resources>
     <string name="records_filter_collapsed_summary">点击展开筛选与搜索</string>
     <string name="records_filter_expand">展开或收起筛选与搜索</string>
+    <string name="records_filter_account_label">账户</string>
+    <string name="records_filter_account_all">全部账户</string>
+    <string name="records_filter_amount_label">金额范围</string>
+    <string name="records_filter_amount_min_hint">最小金额</string>
+    <string name="records_filter_amount_max_hint">最大金额</string>
 </resources>

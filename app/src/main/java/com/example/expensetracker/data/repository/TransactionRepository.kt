@@ -24,15 +24,23 @@ class TransactionRepository @Inject constructor(
 
     fun observeFilteredTransactions(
         keyword: String,
+        type: Int? = null,
         categoryId: Long?,
+        accountId: Long? = null,
         startTime: Long?,
         endTime: Long?,
+        minAmount: Long? = null,
+        maxAmount: Long? = null,
     ): Flow<List<RecentTransactionRow>> =
         transactionDao.observeFilteredTransactions(
             keyword = keyword.trim(),
+            type = type,
             categoryId = categoryId,
+            accountId = accountId,
             startTime = startTime,
             endTime = endTime,
+            minAmount = minAmount,
+            maxAmount = maxAmount,
         )
 
     fun observeRecentTransactions(limit: Int = 10): Flow<List<RecentTransactionRow>> =
@@ -41,24 +49,36 @@ class TransactionRepository @Inject constructor(
     fun observeTransactionDetail(transactionId: Long): Flow<TransactionDetailRow?> =
         transactionDao.observeTransactionDetail(transactionId)
 
-    fun observeTodayTotal(now: LocalDate = LocalDate.now()): Flow<Long> {
+    fun observeTodayExpense(now: LocalDate = LocalDate.now()): Flow<Long> {
         val range = dayRange(now)
-        return transactionDao.observeTodayTotal(range.start, range.end)
+        return transactionDao.observeDayTotalByType(TransactionEntity.TYPE_EXPENSE, range.start, range.end)
     }
 
-    fun observeMonthTotal(now: LocalDate = LocalDate.now()): Flow<Long> {
+    fun observeTodayIncome(now: LocalDate = LocalDate.now()): Flow<Long> {
+        val range = dayRange(now)
+        return transactionDao.observeDayTotalByType(TransactionEntity.TYPE_INCOME, range.start, range.end)
+    }
+
+    fun observeMonthExpense(now: LocalDate = LocalDate.now()): Flow<Long> {
         val range = monthRange(now)
-        return transactionDao.observeMonthTotal(range.start, range.end)
+        return transactionDao.observeMonthTotalByType(TransactionEntity.TYPE_EXPENSE, range.start, range.end)
+    }
+
+    fun observeMonthIncome(now: LocalDate = LocalDate.now()): Flow<Long> {
+        val range = monthRange(now)
+        return transactionDao.observeMonthTotalByType(TransactionEntity.TYPE_INCOME, range.start, range.end)
     }
 
     fun observeMonthCategorySummary(
+        type: Int = TransactionEntity.TYPE_EXPENSE,
         now: LocalDate = LocalDate.now(),
     ): Flow<List<CategoryExpenseSummaryRow>> {
         val range = monthRange(now)
-        return transactionDao.observeMonthCategorySummary(range.start, range.end)
+        return transactionDao.observeMonthCategorySummary(type, range.start, range.end)
     }
 
     fun observeRecentDailyTotals(
+        type: Int = TransactionEntity.TYPE_EXPENSE,
         days: Int = 7,
         now: LocalDate = LocalDate.now(),
     ): Flow<List<DailyExpenseTotalRow>> {
@@ -66,7 +86,7 @@ class TransactionRepository @Inject constructor(
 
         val start = now.minusDays((days - 1).toLong()).atStartOfDay(zoneId).toInstant().toEpochMilli()
         val end = now.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
-        return transactionDao.observeRecentDailyTotals(start, end)
+        return transactionDao.observeRecentDailyTotals(type, start, end)
     }
 
     suspend fun insert(transaction: TransactionEntity): Long = transactionDao.insert(transaction)
@@ -82,6 +102,16 @@ class TransactionRepository @Inject constructor(
     suspend fun delete(transaction: TransactionEntity) = transactionDao.delete(transaction)
 
     suspend fun clearAll() = transactionDao.clearAll()
+
+    suspend fun getMonthCategoryTotal(categoryId: Long, month: LocalDate = LocalDate.now()): Long {
+        val range = monthRange(month)
+        return transactionDao.getMonthCategoryTotal(categoryId, range.start, range.end)
+    }
+
+    suspend fun getMonthTotal(month: LocalDate = LocalDate.now()): Long {
+        val range = monthRange(month)
+        return transactionDao.getMonthTotal(range.start, range.end)
+    }
 
     private fun dayRange(date: LocalDate): TimeRange {
         val start = date.atStartOfDay(zoneId).toInstant().toEpochMilli()

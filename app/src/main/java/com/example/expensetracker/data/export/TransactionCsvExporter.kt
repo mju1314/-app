@@ -9,12 +9,11 @@ import java.nio.charset.StandardCharsets
 
 object TransactionCsvExporter {
     private const val CSV_HEADER =
-        "\"ID\",\"时间\",\"金额\",\"分类\",\"支付方式\",\"备注\",\"创建时间\",\"更新时间\""
+        "\"ID\",\"类型\",\"时间\",\"金额\",\"分类\",\"账户\",\"备注\",\"创建时间\",\"更新时间\""
 
     fun export(
         outputStream: OutputStream,
         rows: List<TransactionExportRow>,
-        currencyCode: String,
     ) {
         OutputStreamWriter(outputStream, StandardCharsets.UTF_8).use { writer ->
             writer.appendLine(CSV_HEADER)
@@ -22,10 +21,11 @@ object TransactionCsvExporter {
                 writer.appendLine(
                     listOf(
                         row.id.toString(),
+                        if (row.type == 1) "收入" else "支出",
                         DateFormats.formatDateTime(row.spentAt),
-                        CurrencyFormatter.formatCent(row.amount, currencyCode),
+                        CurrencyFormatter.formatCent(row.amount),
                         row.categoryName,
-                        row.paymentMethodName,
+                        row.accountName.orEmpty(),
                         row.note.orEmpty(),
                         DateFormats.formatDateTime(row.createdAt),
                         DateFormats.formatDateTime(row.updatedAt),

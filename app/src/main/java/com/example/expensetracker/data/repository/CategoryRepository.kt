@@ -12,6 +12,7 @@ class CategoryRepository @Inject constructor(
 ) {
     suspend fun getActiveCategories(): List<CategoryEntity> = categoryDao.getActiveCategories()
     fun observeActiveCategories(): Flow<List<CategoryEntity>> = categoryDao.observeActiveCategories()
+    fun observeActiveCategoriesByType(type: Int): Flow<List<CategoryEntity>> = categoryDao.observeActiveCategoriesByType(type)
     suspend fun countAll(): Int = categoryDao.countAll()
     suspend fun insertAll(categories: List<CategoryEntity>) = categoryDao.insertAll(categories)
 }

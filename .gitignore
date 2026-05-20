@@ -16,6 +16,8 @@ app/build/
 expense-tracker-export.csv
 *.csv
 keystore.properties
+.keystore/
+.keystore.zip
 *.jks
 *.keystore
 *.p12

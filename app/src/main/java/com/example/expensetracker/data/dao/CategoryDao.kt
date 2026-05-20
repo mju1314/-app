@@ -27,6 +27,15 @@ interface CategoryDao {
     )
     fun observeActiveCategories(): Flow<List<CategoryEntity>>
 
+    @Query(
+        """
+        SELECT * FROM categories
+        WHERE is_archived = 0 AND type = :type
+        ORDER BY sort_order ASC, id ASC
+        """,
+    )
+    fun observeActiveCategoriesByType(type: Int): Flow<List<CategoryEntity>>
+
     @Query("SELECT COUNT(*) FROM categories")
     suspend fun countAll(): Int
 

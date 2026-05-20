@@ -23,14 +23,16 @@ interface TransactionDao {
         """
         SELECT
             t.id AS id,
+            t.type AS type,
             t.amount AS amount,
             t.note AS note,
             t.spent_at AS spentAt,
             c.name AS categoryName,
-            p.name AS paymentMethodName
+            c.icon AS categoryIcon,
+            a.name AS accountName
         FROM transactions t
         INNER JOIN categories c ON c.id = t.category_id
-        INNER JOIN payment_methods p ON p.id = t.payment_method_id
+        LEFT JOIN bank_cards a ON a.id = t.bank_card_id
         ORDER BY t.spent_at DESC
         LIMIT :limit
         """,
@@ -40,33 +42,35 @@ interface TransactionDao {
     @Query(
         """
         SELECT COALESCE(SUM(amount), 0) FROM transactions
-        WHERE spent_at >= :startOfDay AND spent_at < :endOfDay
+        WHERE type = :type AND spent_at >= :startOfDay AND spent_at < :endOfDay
         """,
     )
-    fun observeTodayTotal(startOfDay: Long, endOfDay: Long): Flow<Long>
+    fun observeDayTotalByType(type: Int, startOfDay: Long, endOfDay: Long): Flow<Long>
 
     @Query(
         """
         SELECT COALESCE(SUM(amount), 0) FROM transactions
-        WHERE spent_at >= :startOfMonth AND spent_at < :endOfMonth
+        WHERE type = :type AND spent_at >= :startOfMonth AND spent_at < :endOfMonth
         """,
     )
-    fun observeMonthTotal(startOfMonth: Long, endOfMonth: Long): Flow<Long>
+    fun observeMonthTotalByType(type: Int, startOfMonth: Long, endOfMonth: Long): Flow<Long>
 
     @Query(
         """
         SELECT
+            t.category_id AS categoryId,
             c.name AS categoryName,
             COALESCE(SUM(t.amount), 0) AS totalAmount,
             COUNT(t.id) AS transactionCount
         FROM transactions t
         INNER JOIN categories c ON c.id = t.category_id
-        WHERE t.spent_at >= :startOfMonth AND t.spent_at < :endOfMonth
+        WHERE t.type = :type AND t.spent_at >= :startOfMonth AND t.spent_at < :endOfMonth
         GROUP BY t.category_id, c.name
         ORDER BY totalAmount DESC, transactionCount DESC, c.id ASC
         """,
     )
     fun observeMonthCategorySummary(
+        type: Int,
         startOfMonth: Long,
         endOfMonth: Long,
     ): Flow<List<CategoryExpenseSummaryRow>>
@@ -77,12 +81,13 @@ interface TransactionDao {
             date(t.spent_at / 1000, 'unixepoch', 'localtime') AS day,
             COALESCE(SUM(t.amount), 0) AS totalAmount
         FROM transactions t
-        WHERE t.spent_at >= :startOfPeriod AND t.spent_at < :endOfPeriod
+        WHERE t.type = :type AND t.spent_at >= :startOfPeriod AND t.spent_at < :endOfPeriod
         GROUP BY date(t.spent_at / 1000, 'unixepoch', 'localtime')
         ORDER BY day ASC
         """,
     )
     fun observeRecentDailyTotals(
+        type: Int,
         startOfPeriod: Long,
         endOfPeriod: Long,
     ): Flow<List<DailyExpenseTotalRow>>
@@ -91,14 +96,16 @@ interface TransactionDao {
         """
         SELECT
             t.id AS id,
+            t.type AS type,
             t.amount AS amount,
             t.note AS note,
             t.spent_at AS spentAt,
             c.name AS categoryName,
-            p.name AS paymentMethodName
+            c.icon AS categoryIcon,
+            a.name AS accountName
         FROM transactions t
         INNER JOIN categories c ON c.id = t.category_id
-        INNER JOIN payment_methods p ON p.id = t.payment_method_id
+        LEFT JOIN bank_cards a ON a.id = t.bank_card_id
         ORDER BY t.spent_at DESC, t.id DESC
         """,
     )
@@ -108,47 +115,58 @@ interface TransactionDao {
         """
         SELECT
             t.id AS id,
+            t.type AS type,
             t.amount AS amount,
             t.note AS note,
             t.spent_at AS spentAt,
             c.name AS categoryName,
-            p.name AS paymentMethodName
+            c.icon AS categoryIcon,
+            a.name AS accountName
         FROM transactions t
         INNER JOIN categories c ON c.id = t.category_id
-        INNER JOIN payment_methods p ON p.id = t.payment_method_id
-        WHERE (:categoryId IS NULL OR t.category_id = :categoryId)
+        LEFT JOIN bank_cards a ON a.id = t.bank_card_id
+        WHERE (:type IS NULL OR t.type = :type)
+          AND (:categoryId IS NULL OR t.category_id = :categoryId)
+          AND (:accountId IS NULL OR t.bank_card_id = :accountId)
           AND (:startTime IS NULL OR t.spent_at >= :startTime)
           AND (:endTime IS NULL OR t.spent_at < :endTime)
+          AND (:minAmount IS NULL OR t.amount >= :minAmount)
+          AND (:maxAmount IS NULL OR t.amount <= :maxAmount)
           AND (
             :keyword = '' OR
             IFNULL(t.note, '') LIKE '%' || :keyword || '%' OR
             c.name LIKE '%' || :keyword || '%' OR
-            p.name LIKE '%' || :keyword || '%'
+            IFNULL(a.name, '') LIKE '%' || :keyword || '%'
           )
         ORDER BY t.spent_at DESC, t.id DESC
         """,
     )
     fun observeFilteredTransactions(
         keyword: String,
+        type: Int?,
         categoryId: Long?,
+        accountId: Long?,
         startTime: Long?,
         endTime: Long?,
+        minAmount: Long?,
+        maxAmount: Long?,
     ): Flow<List<RecentTransactionRow>>
 
     @Query(
         """
         SELECT
             t.id AS id,
+            t.type AS type,
             t.amount AS amount,
             t.note AS note,
             t.spent_at AS spentAt,
             c.name AS categoryName,
-            p.name AS paymentMethodName,
+            a.name AS accountName,
             t.created_at AS createdAt,
             t.updated_at AS updatedAt
         FROM transactions t
         INNER JOIN categories c ON c.id = t.category_id
-        INNER JOIN payment_methods p ON p.id = t.payment_method_id
+        LEFT JOIN bank_cards a ON a.id = t.bank_card_id
         ORDER BY t.spent_at DESC, t.id DESC
         """,
     )
@@ -158,18 +176,19 @@ interface TransactionDao {
         """
         SELECT
             t.id AS id,
+            t.type AS type,
             t.amount AS amount,
             t.category_id AS categoryId,
             c.name AS categoryName,
-            t.payment_method_id AS paymentMethodId,
-            p.name AS paymentMethodName,
+            t.bank_card_id AS accountId,
+            a.name AS accountName,
             t.note AS note,
             t.spent_at AS spentAt,
             t.created_at AS createdAt,
             t.updated_at AS updatedAt
         FROM transactions t
         INNER JOIN categories c ON c.id = t.category_id
-        INNER JOIN payment_methods p ON p.id = t.payment_method_id
+        LEFT JOIN bank_cards a ON a.id = t.bank_card_id
         WHERE t.id = :transactionId
         LIMIT 1
         """,
@@ -187,4 +206,20 @@ interface TransactionDao {
 
     @Query("DELETE FROM transactions")
     suspend fun clearAll()
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(amount), 0) FROM transactions
+        WHERE type = 0 AND category_id = :categoryId AND spent_at >= :startOfMonth AND spent_at < :endOfMonth
+        """,
+    )
+    suspend fun getMonthCategoryTotal(categoryId: Long, startOfMonth: Long, endOfMonth: Long): Long
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(amount), 0) FROM transactions
+        WHERE type = 0 AND spent_at >= :startOfMonth AND spent_at < :endOfMonth
+        """,
+    )
+    suspend fun getMonthTotal(startOfMonth: Long, endOfMonth: Long): Long
 }

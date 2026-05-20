@@ -14,6 +14,7 @@ data class CategoryEntity(
     @ColumnInfo(name = "name") val name: String,
     @ColumnInfo(name = "icon") val icon: String,
     @ColumnInfo(name = "sort_order") val sortOrder: Int,
+    @ColumnInfo(name = "type", defaultValue = "0") val type: Int = 0,
     @ColumnInfo(name = "is_default") val isDefault: Boolean = false,
     @ColumnInfo(name = "is_archived") val isArchived: Boolean = false,
     @ColumnInfo(name = "created_at") val createdAt: Long,

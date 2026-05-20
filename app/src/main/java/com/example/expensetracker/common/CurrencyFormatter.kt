@@ -7,24 +7,17 @@ import java.util.Locale
 object CurrencyFormatter {
     const val DEFAULT_CURRENCY_CODE = "CNY"
 
-    fun formatCent(
-        amountInCent: Long,
-        currencyCode: String = DEFAULT_CURRENCY_CODE,
-    ): String {
-        val formatter = NumberFormat.getCurrencyInstance(localeFor(currencyCode)).apply {
-            currency = runCatching { Currency.getInstance(currencyCode) }
-                .getOrDefault(Currency.getInstance(DEFAULT_CURRENCY_CODE))
+    fun formatCent(amountInCent: Long): String {
+        val formatter = NumberFormat.getCurrencyInstance(Locale.CHINA).apply {
+            currency = Currency.getInstance(DEFAULT_CURRENCY_CODE)
             maximumFractionDigits = 2
             minimumFractionDigits = 2
         }
         return formatter.format(amountInCent / 100.0)
     }
 
-    private fun localeFor(currencyCode: String): Locale =
-        when (currencyCode) {
-            "USD" -> Locale.US
-            "EUR" -> Locale.GERMANY
-            "JPY" -> Locale.JAPAN
-            else -> Locale.CHINA
-        }
+    fun formatCentWithSign(amountInCent: Long, type: Int): String {
+        val formatted = formatCent(amountInCent)
+        return if (type == 1) "+$formatted" else "-$formatted"
+    }
 }

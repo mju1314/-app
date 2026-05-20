@@ -6,16 +6,14 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
-    tableName = "payment_methods",
+    tableName = "bank_cards",
     indices = [Index(value = ["name"], unique = true)],
 )
-data class PaymentMethodEntity(
+data class AccountEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "name") val name: String,
-    @ColumnInfo(name = "sort_order") val sortOrder: Int,
-    @ColumnInfo(name = "is_default") val isDefault: Boolean = false,
-    @ColumnInfo(name = "is_archived") val isArchived: Boolean = false,
+    @ColumnInfo(name = "balance") val balance: Long = 0,
+    @ColumnInfo(name = "sort_order") val sortOrder: Int = 0,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )
-

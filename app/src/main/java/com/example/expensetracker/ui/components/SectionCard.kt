@@ -1,5 +1,8 @@
 package com.example.expensetracker.ui.components
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,7 +26,13 @@ fun SectionCard(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(
+            modifier = Modifier
+                .animateContentSize(
+                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                )
+                .padding(16.dp),
+        ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
@@ -35,4 +44,3 @@ fun SectionCard(
         }
     }
 }
-

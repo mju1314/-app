@@ -1,10 +1,14 @@
 package com.example.expensetracker.ui.stats
 
 data class StatsUiState(
+    val selectedType: Int = 0,
     val monthLabel: String = "",
     val selectedYear: Int = 0,
     val selectedMonth: Int = 0,
     val monthTotalText: String = "",
+    val monthBudgetText: String? = null,
+    val monthBudgetFraction: Float = 0f,
+    val monthBudgetExceeded: Boolean = false,
     val averageDailyText: String = "",
     val averageDailyHint: String = "",
     val topCategory: StatsTopCategoryUiModel? = null,
@@ -23,6 +27,9 @@ data class StatsCategorySummaryUiModel(
     val ratioText: String,
     val ratio: Float,
     val transactionCount: Long,
+    val budgetText: String? = null,
+    val budgetFraction: Float = 0f,
+    val budgetExceeded: Boolean = false,
 )
 
 data class StatsTopCategoryUiModel(

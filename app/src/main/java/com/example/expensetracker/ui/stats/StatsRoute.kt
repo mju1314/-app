@@ -42,13 +42,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.expensetracker.R
+import com.example.expensetracker.data.entity.TransactionEntity
 import androidx.compose.ui.text.input.KeyboardType
 import java.time.LocalDate
+import com.example.expensetracker.ui.components.DonutChart
+import com.example.expensetracker.ui.components.DonutChartSegment
+import com.example.expensetracker.ui.components.LineAreaChart
+import com.example.expensetracker.ui.components.LineChartPoint
 import com.example.expensetracker.ui.components.SectionCard
 
 @Composable
@@ -60,6 +66,7 @@ fun StatsRoute(
     StatsScreen(
         contentPadding = contentPadding,
         uiState = uiState,
+        onTypeSelected = viewModel::selectType,
         onPreviousMonthClick = viewModel::showPreviousMonth,
         onNextMonthClick = viewModel::showNextMonth,
         onMonthSelected = viewModel::selectMonth,
@@ -72,6 +79,7 @@ fun StatsRoute(
 private fun StatsScreen(
     contentPadding: PaddingValues,
     uiState: StatsUiState,
+    onTypeSelected: (Int) -> Unit,
     onPreviousMonthClick: () -> Unit,
     onNextMonthClick: () -> Unit,
     onMonthSelected: (Int, Int) -> Unit,
@@ -100,7 +108,29 @@ private fun StatsScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SectionCard(title = stringResource(id = R.string.stats_month_total_title)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(
+                selected = uiState.selectedType == TransactionEntity.TYPE_EXPENSE,
+                onClick = { onTypeSelected(TransactionEntity.TYPE_EXPENSE) },
+                label = { Text(text = stringResource(id = R.string.transaction_type_expense)) },
+            )
+            FilterChip(
+                selected = uiState.selectedType == TransactionEntity.TYPE_INCOME,
+                onClick = { onTypeSelected(TransactionEntity.TYPE_INCOME) },
+                label = { Text(text = stringResource(id = R.string.transaction_type_income)) },
+            )
+        }
+
+        SectionCard(title = stringResource(
+            id = if (uiState.selectedType == TransactionEntity.TYPE_INCOME) {
+                R.string.stats_month_income_title
+            } else {
+                R.string.stats_month_total_title
+            },
+        )) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -147,6 +177,52 @@ private fun StatsScreen(
                 modifier = Modifier.padding(top = 8.dp),
                 style = MaterialTheme.typography.headlineMedium,
             )
+            if (uiState.monthBudgetText != null) {
+                Column(
+                    modifier = Modifier.padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(999.dp),
+                            ),
+                    ) {
+                        val fraction = uiState.monthBudgetFraction.visibleBarFraction()
+                        if (fraction > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(fraction)
+                                    .height(8.dp)
+                                    .background(
+                                        color = if (uiState.monthBudgetExceeded) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.primary
+                                        },
+                                        shape = RoundedCornerShape(999.dp),
+                                    ),
+                            )
+                        }
+                    }
+                    Text(
+                        text = if (uiState.monthBudgetExceeded) {
+                            "${uiState.monthBudgetText} · ${stringResource(id = R.string.stats_budget_exceeded)}"
+                        } else {
+                            uiState.monthBudgetText
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (uiState.monthBudgetExceeded) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
             MetricHighlight(
                 modifier = Modifier.padding(top = 12.dp),
                 title = stringResource(id = R.string.stats_average_daily_title),
@@ -208,6 +284,17 @@ private fun StatsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             } else {
+                DonutChart(
+                    segments = uiState.categorySummaries.mapIndexed { index, item ->
+                        DonutChartSegment(
+                            label = item.categoryName,
+                            value = item.ratio,
+                            color = donutChartColors[index % donutChartColors.size],
+                        )
+                    },
+                    centerText = uiState.monthTotalText,
+                    modifier = Modifier.padding(bottom = 16.dp),
+                )
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     uiState.categorySummaries.forEach { item ->
                         CategorySummaryRow(item = item)
@@ -247,12 +334,39 @@ private fun StatsScreen(
                     )
                 }
             }
-            Column(
-                modifier = Modifier.padding(top = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                uiState.recentDailyTrends.forEach { item ->
-                    TrendRow(item = item)
+            if (uiState.recentDailyTrends.isNotEmpty()) {
+                LineAreaChart(
+                    points = uiState.recentDailyTrends.map { item ->
+                        LineChartPoint(
+                            label = item.dayLabel,
+                            value = item.barFraction,
+                        )
+                    },
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                // X 轴标签
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    val labels = if (uiState.recentDailyTrends.size <= 7) {
+                        uiState.recentDailyTrends.map { it.dayLabel }
+                    } else {
+                        val step = (uiState.recentDailyTrends.size - 1) / 4
+                        (0..4).map { i ->
+                            val idx = (i * step).coerceAtMost(uiState.recentDailyTrends.lastIndex)
+                            uiState.recentDailyTrends[idx].dayLabel
+                        }
+                    }
+                    labels.forEach { label ->
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
@@ -323,6 +437,48 @@ private fun CategorySummaryRow(item: StatsCategorySummaryUiModel) {
                 )
             }
         }
+
+        if (item.budgetText != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(999.dp),
+                    ),
+            ) {
+                val budgetBarFraction = item.budgetFraction.visibleBarFraction()
+                if (budgetBarFraction > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(budgetBarFraction)
+                            .height(8.dp)
+                            .background(
+                                color = if (item.budgetExceeded) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.tertiary
+                                },
+                                shape = RoundedCornerShape(999.dp),
+                            ),
+                    )
+                }
+            }
+            Text(
+                text = if (item.budgetExceeded) {
+                    "${item.budgetText} · ${stringResource(id = R.string.stats_budget_exceeded)}"
+                } else {
+                    item.budgetText
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (item.budgetExceeded) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
     }
 }
 
@@ -348,50 +504,6 @@ private fun MetricHighlight(
             )
             content()
         }
-    }
-}
-
-@Composable
-private fun TrendRow(item: StatsTrendPointUiModel) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = item.dayLabel,
-            modifier = Modifier.width(44.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(10.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(999.dp),
-                ),
-        ) {
-            val fraction = item.barFraction.visibleBarFraction()
-            if (fraction > 0f) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(fraction)
-                        .height(10.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(999.dp),
-                        ),
-                )
-            }
-        }
-
-        Text(
-            text = item.amountText,
-            style = MaterialTheme.typography.bodySmall,
-        )
     }
 }
 
@@ -469,3 +581,13 @@ private fun Float.visibleBarFraction(): Float =
         this < 0.06f -> 0.06f
         else -> this.coerceAtMost(1f)
     }
+
+private val donutChartColors = listOf(
+    Color(0xFF2E7D6F),
+    Color(0xFFFF6B6B),
+    Color(0xFF4ECDC4),
+    Color(0xFFFFBE0B),
+    Color(0xFF845EC2),
+    Color(0xFFFF9671),
+    Color(0xFF00C9A7),
+)

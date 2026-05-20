@@ -1,8 +1,11 @@
 package com.example.expensetracker.data.backup
 
 import android.content.Context
+import androidx.sqlite.db.SimpleSQLiteQuery
+import com.example.expensetracker.BuildConfig
 import com.example.expensetracker.data.db.AppDatabase
 import dagger.hilt.android.qualifiers.ApplicationContext
+import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -15,8 +18,11 @@ import javax.inject.Singleton
 @Singleton
 class AppBackupManager @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val database: AppDatabase,
 ) {
     fun backup(outputStream: OutputStream) {
+        checkpointDatabase()
+
         val databasePath = context.getDatabasePath(AppDatabase.DATABASE_NAME)
         val databaseFiles = listOf(
             databasePath,
@@ -28,6 +34,16 @@ class AppBackupManager @Inject constructor(
         val preferenceFiles = preferencesDir.listFiles()?.filter { it.isFile }.orEmpty()
 
         ZipOutputStream(outputStream).use { zip ->
+            val metadata = JSONObject().apply {
+                put("appVersionCode", BuildConfig.VERSION_CODE)
+                put("appVersionName", BuildConfig.VERSION_NAME)
+                put("dbVersion", AppDatabase.DB_VERSION)
+                put("createdAt", System.currentTimeMillis())
+            }
+            zip.putNextEntry(ZipEntry(METADATA_FILE_NAME))
+            zip.write(metadata.toString(2).toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+
             databaseFiles.forEach { file ->
                 zip.putNextEntry(ZipEntry("$DATABASE_DIR_NAME/${file.name}"))
                 file.inputStream().use { input -> input.copyTo(zip) }
@@ -50,12 +66,17 @@ class AppBackupManager @Inject constructor(
         databaseDir.mkdirs()
         dataStoreDir.mkdirs()
 
+        val zipBytes = inputStream.readBytes()
+
+        validateBackup(zipBytes)
+        database.close()
+
         clearTargets(
             databaseDir = databaseDir,
             dataStoreDir = dataStoreDir,
         )
 
-        ZipInputStream(inputStream).use { zip ->
+        ZipInputStream(zipBytes.inputStream()).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
                 if (!entry.isDirectory) {
@@ -77,6 +98,35 @@ class AppBackupManager @Inject constructor(
         }
     }
 
+    private fun validateBackup(zipBytes: ByteArray) {
+        var metadataJson: String? = null
+
+        ZipInputStream(zipBytes.inputStream()).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (entry.name == METADATA_FILE_NAME) {
+                    metadataJson = zip.readBytes().toString(Charsets.UTF_8)
+                    break
+                }
+                zip.closeEntry()
+                entry = zip.nextEntry
+            }
+        }
+
+        // 兼容旧版本备份（没有 metadata.json），直接跳过校验
+        val json = metadataJson ?: return
+
+        val metadata = JSONObject(json)
+        val backupDbVersion = metadata.optInt("dbVersion", -1)
+
+        if (backupDbVersion > AppDatabase.DB_VERSION) {
+            throw IncompatibleBackupException(
+                backupDbVersion = backupDbVersion,
+                currentDbVersion = AppDatabase.DB_VERSION,
+            )
+        }
+    }
+
     private fun clearTargets(
         databaseDir: File,
         dataStoreDir: File,
@@ -89,8 +139,20 @@ class AppBackupManager @Inject constructor(
             ?.forEach { it.delete() }
     }
 
+    private fun checkpointDatabase() {
+        database.query(SimpleSQLiteQuery("PRAGMA wal_checkpoint(FULL)")).close()
+    }
+
     companion object {
         private const val DATABASE_DIR_NAME = "database"
         private const val DATASTORE_DIR_NAME = "datastore"
+        private const val METADATA_FILE_NAME = "metadata.json"
     }
 }
+
+class IncompatibleBackupException(
+    val backupDbVersion: Int,
+    val currentDbVersion: Int,
+) : RuntimeException(
+    "Backup database version ($backupDbVersion) is newer than current ($currentDbVersion). Please update the app.",
+)

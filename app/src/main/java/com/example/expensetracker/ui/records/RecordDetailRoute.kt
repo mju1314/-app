@@ -1,5 +1,6 @@
 package com.example.expensetracker.ui.records
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,11 +28,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.expensetracker.R
+import com.example.expensetracker.data.entity.TransactionEntity
 import com.example.expensetracker.ui.add.SelectOptionUiModel
 import com.example.expensetracker.ui.components.EditableDateTimeField
 import com.example.expensetracker.ui.components.SectionCard
@@ -40,20 +43,46 @@ import com.example.expensetracker.ui.components.SectionCard
 fun RecordDetailRoute(
     contentPadding: PaddingValues,
     onNavigateBack: () -> Unit,
+    onDeleteRequest: (com.example.expensetracker.data.entity.TransactionEntity) -> Unit,
     viewModel: RecordDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val warningMessage = stringResource(id = R.string.warning_balance_negative)
+    val budgetExceededTotal = stringResource(id = R.string.budget_exceeded_total)
+    val budgetExceededCategory = stringResource(id = R.string.budget_exceeded_category)
     RecordDetailScreen(
         contentPadding = contentPadding,
         uiState = uiState,
         onNavigateBack = onNavigateBack,
+        onTypeChanged = viewModel::updateTransactionType,
         onAmountChanged = viewModel::updateAmount,
         onNoteChanged = viewModel::updateNote,
         onSpentAtChanged = viewModel::updateSpentAt,
         onCategorySelected = viewModel::selectCategory,
-        onPaymentMethodSelected = viewModel::selectPaymentMethod,
-        onSaveClick = { viewModel.saveChanges(onNavigateBack) },
-        onDeleteClick = { viewModel.deleteRecord(onNavigateBack) },
+        onAccountSelected = viewModel::selectAccount,
+        onSaveClick = {
+            viewModel.saveChanges(
+                onSuccess = onNavigateBack,
+                onBalanceWarning = {
+                    Toast.makeText(context, warningMessage, Toast.LENGTH_LONG).show()
+                },
+                onBudgetExceeded = { categoryName ->
+                    val message = if (categoryName.isEmpty()) {
+                        budgetExceededTotal
+                    } else {
+                        budgetExceededCategory.replace("%1\$s", categoryName)
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                },
+            )
+        },
+        onDeleteClick = {
+            viewModel.deleteRecord { entity ->
+                onDeleteRequest(entity)
+                onNavigateBack()
+            }
+        },
     )
 }
 
@@ -63,11 +92,12 @@ private fun RecordDetailScreen(
     contentPadding: PaddingValues,
     uiState: RecordDetailUiState,
     onNavigateBack: () -> Unit,
+    onTypeChanged: (Int) -> Unit,
     onAmountChanged: (String) -> Unit,
     onNoteChanged: (String) -> Unit,
     onSpentAtChanged: (Long) -> Unit,
     onCategorySelected: (Long) -> Unit,
-    onPaymentMethodSelected: (Long) -> Unit,
+    onAccountSelected: (Long?) -> Unit,
     onSaveClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
@@ -108,6 +138,22 @@ private fun RecordDetailScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = uiState.transactionType == TransactionEntity.TYPE_EXPENSE,
+                    onClick = { onTypeChanged(TransactionEntity.TYPE_EXPENSE) },
+                    label = { Text(text = stringResource(id = R.string.transaction_type_expense)) },
+                )
+                FilterChip(
+                    selected = uiState.transactionType == TransactionEntity.TYPE_INCOME,
+                    onClick = { onTypeChanged(TransactionEntity.TYPE_INCOME) },
+                    label = { Text(text = stringResource(id = R.string.transaction_type_income)) },
+                )
+            }
+
             SectionCard(title = stringResource(id = R.string.label_amount)) {
                 OutlinedTextField(
                     value = uiState.amount,
@@ -125,12 +171,23 @@ private fun RecordDetailScreen(
                 )
             }
 
-            SectionCard(title = stringResource(id = R.string.label_payment_method)) {
-                OptionChips(
-                    options = uiState.paymentMethodOptions,
-                    selectedId = uiState.selectedPaymentMethodId,
-                    onSelected = onPaymentMethodSelected,
-                )
+            if (uiState.accountOptions.isNotEmpty()) {
+                SectionCard(title = stringResource(id = R.string.label_account)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = uiState.selectedAccountId == null,
+                            onClick = { onAccountSelected(null) },
+                            label = { Text(text = stringResource(id = R.string.label_no_account)) },
+                        )
+                        uiState.accountOptions.forEach { option ->
+                            FilterChip(
+                                selected = option.id == uiState.selectedAccountId,
+                                onClick = { onAccountSelected(option.id) },
+                                label = { Text(text = option.label) },
+                            )
+                        }
+                    }
+                }
             }
 
             SectionCard(title = stringResource(id = R.string.label_spent_at)) {

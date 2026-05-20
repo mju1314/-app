@@ -70,14 +70,38 @@
 ### 构建 Debug 包
 
 ```powershell
+$env:JAVA_HOME="D:\develop\JDK\jdk17"
 .\gradlew.bat assembleDebug
 ```
 
 ### 安装到设备或模拟器
 
 ```powershell
+$env:JAVA_HOME="D:\develop\JDK\jdk17"
 .\gradlew.bat installDebug
 ```
+
+### 构建 Release 包
+
+```powershell
+$env:JAVA_HOME="D:\develop\JDK\jdk17"
+.\gradlew.bat assembleRelease
+```
+
+Release APK 输出路径：
+
+```text
+app/build/outputs/apk/release/app-release.apk
+```
+
+说明：
+
+- `keystore.properties` 需要存在，并包含 `storePassword`、`keyAlias`、`keyPassword`
+- Release 签名文件优先从以下位置查找：
+  1. `keystore.properties` 中配置的 `storeFile`
+  2. 项目根目录 `.keystore/expense-tracker-release.jks`
+  3. 用户目录 `.keystore/expense-tracker-release.jks`
+- `.keystore.zip` 仅用于手动恢复签名文件，不建议继续放在项目根目录
 
 ## 当前项目定位
 
@@ -95,3 +119,43 @@
 - 更细粒度的统计维度
 - 自定义时间范围筛选
 - 自动化测试补齐
+
+## 编译运行步骤
+
+1. 启动模拟器
+
+```powershell
+& "C:/Users/15218/AppData/Local/Android/Sdk/emulator/emulator" -avd Medium_Phone -no-snapshot-load
+```
+
+2. 等待设备就绪
+
+```powershell
+& "C:/Users/15218/AppData/Local/Android/Sdk/platform-tools/adb" wait-for-device
+```
+
+3. 编译并安装 Debug 包
+
+```powershell
+Set-Location C:/Users/15218/Desktop/app
+$env:JAVA_HOME="D:\develop\JDK\jdk17"
+.\gradlew.bat installDebug
+```
+
+首次环境异常时可额外执行：
+
+```powershell
+.\gradlew.bat clean
+```
+
+4. 启动应用
+
+```powershell
+& "C:/Users/15218/AppData/Local/Android/Sdk/platform-tools/adb" shell am start -n com.example.expensetracker/.MainActivity
+```
+
+## 关键路径
+
+- JDK: `D:/develop/JDK/jdk17`
+- Android SDK: `C:/Users/15218/AppData/Local/Android/Sdk`
+- 模拟器: `Medium_Phone (Android 14)`

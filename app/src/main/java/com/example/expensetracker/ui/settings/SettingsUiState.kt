@@ -1,11 +1,12 @@
 package com.example.expensetracker.ui.settings
 
 import androidx.annotation.StringRes
-import com.example.expensetracker.R
-import com.example.expensetracker.common.CurrencyFormatter
 
 data class SettingsUiState(
-    val selectedCurrencyCode: String = CurrencyFormatter.DEFAULT_CURRENCY_CODE,
+    val accounts: List<AccountUiModel> = emptyList(),
+    val totalBalanceText: String = "",
+    val budgets: List<BudgetUiModel> = emptyList(),
+    val categoryOptions: List<CategoryOptionUiModel> = emptyList(),
     val isClearingData: Boolean = false,
     val isExportingCsv: Boolean = false,
     val isBackingUp: Boolean = false,
@@ -16,14 +17,22 @@ data class SettingsUiState(
     @StringRes val restoreMessageResId: Int? = null,
 )
 
-data class CurrencyOptionUiModel(
-    val code: String,
-    @StringRes val labelResId: Int,
+data class AccountUiModel(
+    val id: Long,
+    val name: String,
+    val balanceText: String,
+    val balanceInCent: Long,
 )
 
-val currencyOptions = listOf(
-    CurrencyOptionUiModel(code = "CNY", labelResId = R.string.settings_currency_cny),
-    CurrencyOptionUiModel(code = "USD", labelResId = R.string.settings_currency_usd),
-    CurrencyOptionUiModel(code = "EUR", labelResId = R.string.settings_currency_eur),
-    CurrencyOptionUiModel(code = "JPY", labelResId = R.string.settings_currency_jpy),
+data class BudgetUiModel(
+    val id: Long,
+    val categoryId: Long?,
+    val categoryName: String?,
+    val amountText: String,
+    val amountInCent: Long,
+)
+
+data class CategoryOptionUiModel(
+    val id: Long,
+    val name: String,
 )

@@ -5,63 +5,77 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.expensetracker.common.DateFormats
 import com.example.expensetracker.data.entity.TransactionEntity
-import com.example.expensetracker.data.preferences.UserPreferencesRepository
+import com.example.expensetracker.data.repository.AccountRepository
+import com.example.expensetracker.data.repository.BudgetRepository
 import com.example.expensetracker.data.repository.CategoryRepository
-import com.example.expensetracker.data.repository.PaymentMethodRepository
 import com.example.expensetracker.data.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.math.BigDecimal
 import java.math.RoundingMode
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class AddExpenseViewModel @Inject constructor(
-    categoryRepository: CategoryRepository,
-    paymentMethodRepository: PaymentMethodRepository,
+    private val categoryRepository: CategoryRepository,
     private val transactionRepository: TransactionRepository,
-    private val userPreferencesRepository: UserPreferencesRepository,
+    private val accountRepository: AccountRepository,
+    private val budgetRepository: BudgetRepository,
 ) : ViewModel() {
     private val formState = MutableStateFlow(createInitialState())
 
+    private val categoriesFlow = formState
+        .map { it.transactionType }
+        .flatMapLatest { type ->
+            categoryRepository.observeActiveCategoriesByType(type).map { categories ->
+                categories.map { SelectOptionUiModel(id = it.id, label = it.name, icon = it.icon) }
+            }
+        }
+
     val uiState: StateFlow<AddExpenseUiState> = combine(
         formState,
-        categoryRepository.observeActiveCategories().map { categories ->
-            categories.map { SelectOptionUiModel(id = it.id, label = it.name) }
+        categoriesFlow,
+        accountRepository.observeAll().map { accounts ->
+            accounts.map { SelectOptionUiModel(id = it.id, label = it.name) }
         },
-        paymentMethodRepository.observeActivePaymentMethods().map { items ->
-            items.map { SelectOptionUiModel(id = it.id, label = it.name) }
-        },
-        userPreferencesRepository.lastUsedPaymentMethodId,
-    ) { currentState, categoryOptions, paymentMethodOptions, lastUsedPaymentMethodId ->
+    ) { currentState, categoryOptions, accountOptions ->
         val selectedCategory = currentState.selectedCategoryId
             ?.let { targetId -> categoryOptions.firstOrNull { it.id == targetId } }
 
-        val selectedPaymentMethod = currentState.selectedPaymentMethodId
-            ?.let { targetId -> paymentMethodOptions.firstOrNull { it.id == targetId } }
-            ?: lastUsedPaymentMethodId
-                ?.let { targetId -> paymentMethodOptions.firstOrNull { it.id == targetId } }
-            ?: paymentMethodOptions.firstOrNull()
+        val selectedAccount = currentState.selectedAccountId
+            ?.let { targetId -> accountOptions.firstOrNull { it.id == targetId } }
 
         currentState.copy(
             selectedCategoryId = selectedCategory?.id,
             selectedCategoryName = selectedCategory?.label,
-            selectedPaymentMethodId = selectedPaymentMethod?.id,
-            selectedPaymentMethodName = selectedPaymentMethod?.label,
+            selectedAccountId = selectedAccount?.id,
+            selectedAccountName = selectedAccount?.label,
             categoryOptions = categoryOptions,
-            paymentMethodOptions = paymentMethodOptions,
+            accountOptions = accountOptions,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = formState.value,
     )
+
+    fun updateTransactionType(type: Int) {
+        formState.value = formState.value.copy(
+            transactionType = type,
+            selectedCategoryId = null,
+            selectedCategoryName = null,
+            errorMessageResId = null,
+        )
+    }
 
     fun updateAmount(value: String) {
         val sanitized = value.filter { it.isDigit() || it == '.' }.let { text ->
@@ -102,21 +116,24 @@ class AddExpenseViewModel @Inject constructor(
         )
     }
 
-    fun selectPaymentMethod(paymentMethodId: Long) {
+    fun selectAccount(accountId: Long?) {
         formState.value = formState.value.copy(
-            selectedPaymentMethodId = paymentMethodId,
+            selectedAccountId = accountId,
             errorMessageResId = null,
         )
     }
 
-    fun saveExpense(onSuccess: () -> Unit) {
+    fun saveExpense(
+        onSuccess: () -> Unit,
+        onBalanceWarning: () -> Unit = {},
+        onBudgetExceeded: (String) -> Unit = {},
+    ) {
         val currentState = uiState.value
         val amountInCent = currentState.amount.toAmountInCent()
 
         val errorMessageResId = when {
             amountInCent == null || amountInCent <= 0L -> R.string.error_invalid_amount
             currentState.selectedCategoryId == null -> R.string.error_missing_category
-            currentState.selectedPaymentMethodId == null -> R.string.error_missing_payment_method
             else -> null
         }
 
@@ -131,21 +148,64 @@ class AddExpenseViewModel @Inject constructor(
             val now = System.currentTimeMillis()
             val validatedAmountInCent = checkNotNull(amountInCent)
             val selectedCategoryId = currentState.selectedCategoryId!!
-            val selectedPaymentMethodId = currentState.selectedPaymentMethodId!!
+            val accountId = currentState.selectedAccountId
+            val isExpense = currentState.transactionType == TransactionEntity.TYPE_EXPENSE
+
+            var balanceWillBeNegative = false
+            if (accountId != null && isExpense) {
+                val currentBalance = accountRepository.getBalanceById(accountId)
+                if (currentBalance != null && currentBalance - validatedAmountInCent < 0) {
+                    balanceWillBeNegative = true
+                }
+            }
+
             transactionRepository.insert(
                 TransactionEntity(
+                    type = currentState.transactionType,
                     amount = validatedAmountInCent,
                     categoryId = selectedCategoryId,
-                    paymentMethodId = selectedPaymentMethodId,
+                    accountId = accountId,
                     note = currentState.note.trim().ifBlank { null },
                     spentAt = currentState.spentAtMillis,
                     createdAt = now,
                     updatedAt = now,
                 ),
             )
-            userPreferencesRepository.setLastUsedPaymentMethodId(selectedPaymentMethodId)
+
+            if (accountId != null) {
+                if (isExpense) {
+                    accountRepository.deductBalance(accountId, validatedAmountInCent)
+                } else {
+                    accountRepository.restoreBalance(accountId, validatedAmountInCent)
+                }
+            }
+
             formState.value = createInitialState()
+            if (balanceWillBeNegative) onBalanceWarning()
+            if (isExpense) {
+                checkBudgetExceeded(selectedCategoryId, onBudgetExceeded)
+            }
             onSuccess()
+        }
+    }
+
+    private suspend fun checkBudgetExceeded(categoryId: Long, onExceeded: (String) -> Unit) {
+        val categoryBudget = budgetRepository.getByCategoryId(categoryId)
+        if (categoryBudget != null) {
+            val categoryTotal = transactionRepository.getMonthCategoryTotal(categoryId)
+            if (categoryTotal > categoryBudget.amount) {
+                val categoryName = uiState.value.categoryOptions
+                    .firstOrNull { it.id == categoryId }?.label.orEmpty()
+                onExceeded(categoryName)
+                return
+            }
+        }
+        val totalBudget = budgetRepository.getByCategoryId(null)
+        if (totalBudget != null) {
+            val monthTotal = transactionRepository.getMonthTotal()
+            if (monthTotal > totalBudget.amount) {
+                onExceeded("")
+            }
         }
     }
 

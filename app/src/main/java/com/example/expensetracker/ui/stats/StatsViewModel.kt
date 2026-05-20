@@ -5,7 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.expensetracker.common.CurrencyFormatter
 import com.example.expensetracker.data.model.CategoryExpenseSummaryRow
 import com.example.expensetracker.data.model.DailyExpenseTotalRow
-import com.example.expensetracker.data.preferences.UserPreferencesRepository
+import com.example.expensetracker.data.entity.BudgetEntity
+import com.example.expensetracker.data.repository.BudgetRepository
 import com.example.expensetracker.data.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
@@ -23,7 +24,7 @@ import kotlinx.coroutines.flow.update
 @HiltViewModel
 class StatsViewModel @Inject constructor(
     private val transactionRepository: TransactionRepository,
-    userPreferencesRepository: UserPreferencesRepository,
+    private val budgetRepository: BudgetRepository,
 ) : ViewModel() {
     private val today = LocalDate.now()
     private val currentMonth = today.withDayOfMonth(1)
@@ -33,11 +34,12 @@ class StatsViewModel @Inject constructor(
 
     private val selectedMonth = MutableStateFlow(currentMonth)
     private val selectedTrendWindowDays = MutableStateFlow(DEFAULT_TREND_WINDOW_DAYS)
+    private val selectedType = MutableStateFlow(0)
 
     private val initialUiState = StatsUiState(
         monthLabel = currentMonth.format(monthFormatter),
-        monthTotalText = CurrencyFormatter.formatCent(0, CurrencyFormatter.DEFAULT_CURRENCY_CODE),
-        averageDailyText = CurrencyFormatter.formatCent(0, CurrencyFormatter.DEFAULT_CURRENCY_CODE),
+        monthTotalText = CurrencyFormatter.formatCent(0),
+        averageDailyText = CurrencyFormatter.formatCent(0),
         averageDailyHint = currentMonth.toAverageDailyHint(today),
         selectedTrendWindowDays = DEFAULT_TREND_WINDOW_DAYS,
         trendRangeLabel = currentMonth
@@ -51,28 +53,35 @@ class StatsViewModel @Inject constructor(
     val uiState: StateFlow<StatsUiState> = combine(
         selectedMonth,
         selectedTrendWindowDays,
-        userPreferencesRepository.defaultCurrencyCode,
-    ) { month, trendWindowDays, currencyCode ->
+        selectedType,
+    ) { month, trendWindowDays, type ->
         StatsQuery(
             month = month.withDayOfMonth(1),
             trendWindowDays = trendWindowDays,
-            currencyCode = currencyCode,
+            type = type,
         )
     }.flatMapLatest { query ->
         val trendEndDate = query.month.toTrendEndDate(today)
         combine(
-            transactionRepository.observeMonthTotal(query.month),
-            transactionRepository.observeMonthCategorySummary(query.month),
+            transactionRepository.observeMonthExpense(query.month).let { expenseFlow ->
+                if (query.type == 0) expenseFlow
+                else transactionRepository.observeMonthIncome(query.month)
+            },
+            transactionRepository.observeMonthCategorySummary(query.type, query.month),
             transactionRepository.observeRecentDailyTotals(
+                type = query.type,
                 days = query.trendWindowDays,
                 now = trendEndDate,
             ),
         ) { monthTotal, categoryRows, dailyRows ->
+            Triple(monthTotal, categoryRows, dailyRows)
+        }.combine(budgetRepository.observeAll()) { (monthTotal, categoryRows, dailyRows), budgets ->
             buildUiState(
                 query = query,
                 monthTotal = monthTotal,
                 categoryRows = categoryRows,
                 dailyRows = dailyRows,
+                budgets = budgets,
             )
         }
     }.stateIn(
@@ -101,6 +110,10 @@ class StatsViewModel @Inject constructor(
         }
     }
 
+    fun selectType(type: Int) {
+        selectedType.value = type
+    }
+
     fun selectMonth(year: Int, month: Int) {
         if (month !in 1..12) return
         if (year !in 1..currentMonth.year) return
@@ -115,6 +128,7 @@ class StatsViewModel @Inject constructor(
         monthTotal: Long,
         categoryRows: List<CategoryExpenseSummaryRow>,
         dailyRows: List<DailyExpenseTotalRow>,
+        budgets: List<BudgetEntity>,
     ): StatsUiState {
         val trendEndDate = query.month.toTrendEndDate(today)
         val trendStartDate = trendEndDate.minusDays((query.trendWindowDays - 1).toLong())
@@ -123,10 +137,21 @@ class StatsViewModel @Inject constructor(
         }
         val dailyAmounts = dailyRows.associateByDate()
         val maxDailyAmount = trendDates.maxOfOrNull { date -> dailyAmounts[date] ?: 0L } ?: 0L
-        val categorySummaries = categoryRows.toUiModels(
-            monthTotal = monthTotal,
-            currencyCode = query.currencyCode,
-        )
+
+        val isExpenseMode = query.type == 0
+
+        val budgetByCategoryName = if (isExpenseMode) {
+            budgets.filter { it.categoryId != null }.associateBy { it.categoryId }
+        } else {
+            emptyMap()
+        }
+        val totalBudget = if (isExpenseMode) {
+            budgets.firstOrNull { it.categoryId == null }
+        } else {
+            null
+        }
+
+        val categorySummaries = categoryRows.toUiModels(monthTotal, budgetByCategoryName)
         val averageDailyDivisor = query.month.toAverageDailyDivisor(today)
         val averageDailyAmount = if (averageDailyDivisor > 0) {
             (monthTotal.toDouble() / averageDailyDivisor.toDouble()).roundToLong()
@@ -134,12 +159,24 @@ class StatsViewModel @Inject constructor(
             0L
         }
 
+        val monthBudgetText = totalBudget?.let {
+            "${CurrencyFormatter.formatCent(monthTotal)} / ${CurrencyFormatter.formatCent(it.amount)}"
+        }
+        val monthBudgetFraction = totalBudget?.let {
+            if (it.amount > 0) (monthTotal.toFloat() / it.amount.toFloat()).coerceAtMost(1f) else 0f
+        } ?: 0f
+        val monthBudgetExceeded = totalBudget != null && monthTotal > totalBudget.amount
+
         return StatsUiState(
+            selectedType = query.type,
             monthLabel = query.month.format(monthFormatter),
             selectedYear = query.month.year,
             selectedMonth = query.month.monthValue,
-            monthTotalText = CurrencyFormatter.formatCent(monthTotal, query.currencyCode),
-            averageDailyText = CurrencyFormatter.formatCent(averageDailyAmount, query.currencyCode),
+            monthTotalText = CurrencyFormatter.formatCent(monthTotal),
+            monthBudgetText = monthBudgetText,
+            monthBudgetFraction = monthBudgetFraction,
+            monthBudgetExceeded = monthBudgetExceeded,
+            averageDailyText = CurrencyFormatter.formatCent(averageDailyAmount),
             averageDailyHint = query.month.toAverageDailyHint(today),
             topCategory = categorySummaries.firstOrNull()?.toTopCategory(),
             categorySummaries = categorySummaries,
@@ -149,7 +186,7 @@ class StatsViewModel @Inject constructor(
                 val amount = dailyAmounts[date] ?: 0L
                 StatsTrendPointUiModel(
                     dayLabel = date.format(dayFormatter),
-                    amountText = CurrencyFormatter.formatCent(amount, query.currencyCode),
+                    amountText = CurrencyFormatter.formatCent(amount),
                     barFraction = if (maxDailyAmount > 0L) {
                         amount.toFloat() / maxDailyAmount.toFloat()
                     } else {
@@ -191,16 +228,27 @@ class StatsViewModel @Inject constructor(
 
     private fun List<CategoryExpenseSummaryRow>.toUiModels(
         monthTotal: Long,
-        currencyCode: String,
+        budgetMap: Map<Long?, BudgetEntity>,
     ): List<StatsCategorySummaryUiModel> =
         map { row ->
             val ratio = row.toRatio(monthTotal)
+            val budget = budgetMap[row.categoryId]
+            val budgetText = budget?.let {
+                "${CurrencyFormatter.formatCent(row.totalAmount)} / ${CurrencyFormatter.formatCent(it.amount)}"
+            }
+            val budgetFraction = budget?.let {
+                if (it.amount > 0) (row.totalAmount.toFloat() / it.amount.toFloat()).coerceAtMost(1f) else 0f
+            } ?: 0f
+            val budgetExceeded = budget != null && row.totalAmount > budget.amount
             StatsCategorySummaryUiModel(
                 categoryName = row.categoryName,
-                amountText = CurrencyFormatter.formatCent(row.totalAmount, currencyCode),
+                amountText = CurrencyFormatter.formatCent(row.totalAmount),
                 ratioText = ratio.toPercentText(),
                 ratio = ratio,
                 transactionCount = row.transactionCount,
+                budgetText = budgetText,
+                budgetFraction = budgetFraction,
+                budgetExceeded = budgetExceeded,
             )
         }
 
@@ -238,7 +286,7 @@ class StatsViewModel @Inject constructor(
     private data class StatsQuery(
         val month: LocalDate,
         val trendWindowDays: Int,
-        val currencyCode: String,
+        val type: Int = 0,
     )
 
     private companion object {

@@ -3,9 +3,15 @@ package com.example.expensetracker.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.expensetracker.R
+import com.example.expensetracker.common.CurrencyFormatter
 import com.example.expensetracker.data.backup.AppBackupManager
+import com.example.expensetracker.data.backup.IncompatibleBackupException
+import com.example.expensetracker.data.entity.AccountEntity
 import com.example.expensetracker.data.export.TransactionCsvExporter
 import com.example.expensetracker.data.preferences.UserPreferencesRepository
+import com.example.expensetracker.data.repository.AccountRepository
+import com.example.expensetracker.data.repository.BudgetRepository
+import com.example.expensetracker.data.repository.CategoryRepository
 import com.example.expensetracker.data.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.OutputStream
@@ -22,28 +28,104 @@ class SettingsViewModel @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository,
     private val transactionRepository: TransactionRepository,
     private val appBackupManager: AppBackupManager,
+    private val accountRepository: AccountRepository,
+    private val budgetRepository: BudgetRepository,
+    categoryRepository: CategoryRepository,
 ) : ViewModel() {
     private val transientState = MutableStateFlow(SettingsUiState())
 
+    private val categoriesFlow = categoryRepository.observeActiveCategoriesByType(0)
+
     val uiState: StateFlow<SettingsUiState> = combine(
         transientState,
-        userPreferencesRepository.defaultCurrencyCode,
-    ) { currentState, currencyCode ->
-        currentState.copy(selectedCurrencyCode = currencyCode)
+        accountRepository.observeAll(),
+        budgetRepository.observeAll(),
+    ) { currentState, accounts, budgets ->
+        Triple(currentState, accounts, budgets)
+    }.combine(categoriesFlow) { (currentState, accounts, budgets), categories ->
+        val categoryMap = categories.associate { it.id to it.name }
+        val accountModels = accounts.map { account ->
+            AccountUiModel(
+                id = account.id,
+                name = account.name,
+                balanceText = CurrencyFormatter.formatCent(account.balance),
+                balanceInCent = account.balance,
+            )
+        }
+        val budgetModels = budgets.map { budget ->
+            BudgetUiModel(
+                id = budget.id,
+                categoryId = budget.categoryId,
+                categoryName = budget.categoryId?.let { categoryMap[it] },
+                amountText = CurrencyFormatter.formatCent(budget.amount),
+                amountInCent = budget.amount,
+            )
+        }
+        currentState.copy(
+            accounts = accountModels,
+            totalBalanceText = CurrencyFormatter.formatCent(accounts.sumOf { it.balance }),
+            budgets = budgetModels,
+            categoryOptions = categories.map { CategoryOptionUiModel(id = it.id, name = it.name) },
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = SettingsUiState(),
     )
 
-    fun selectCurrency(currencyCode: String) {
+    fun addAccount(name: String, balanceInCent: Long) {
         viewModelScope.launch {
-            userPreferencesRepository.setDefaultCurrencyCode(currencyCode)
-            transientState.value = transientState.value.copy(
-                infoMessageResId = null,
-                exportMessageResId = null,
-                backupMessageResId = null,
-                restoreMessageResId = null,
+            val now = System.currentTimeMillis()
+            accountRepository.insert(
+                AccountEntity(
+                    name = name,
+                    balance = balanceInCent,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            )
+        }
+    }
+
+    fun updateAccount(id: Long, name: String, balanceInCent: Long) {
+        viewModelScope.launch {
+            val existing = accountRepository.getById(id) ?: return@launch
+            accountRepository.update(
+                existing.copy(
+                    name = name,
+                    balance = balanceInCent,
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+    }
+
+    fun deleteAccount(id: Long) {
+        viewModelScope.launch {
+            val existing = accountRepository.getById(id) ?: return@launch
+            accountRepository.delete(existing)
+        }
+    }
+
+    fun saveBudget(categoryId: Long?, amountInCent: Long) {
+        if (amountInCent <= 0) return
+        viewModelScope.launch {
+            budgetRepository.upsert(categoryId, amountInCent)
+        }
+    }
+
+    fun deleteBudget(budgetId: Long) {
+        viewModelScope.launch {
+            val budgets = uiState.value.budgets
+            val budget = budgets.firstOrNull { it.id == budgetId } ?: return@launch
+            budgetRepository.delete(
+                com.example.expensetracker.data.entity.BudgetEntity(
+                    id = budget.id,
+                    categoryId = budget.categoryId,
+                    amount = budget.amountInCent,
+                    createdAt = 0,
+                    updatedAt = 0,
+                ),
             )
         }
     }
@@ -73,10 +155,9 @@ class SettingsViewModel @Inject constructor(
                     return@launch
                 }
 
-                val currencyCode = uiState.value.selectedCurrencyCode
                 val outputStream = openOutputStream() ?: error("Output stream is null")
                 outputStream.use {
-                    TransactionCsvExporter.export(it, rows, currencyCode)
+                    TransactionCsvExporter.export(it, rows)
                 }
                 transientState.value = transientState.value.copy(
                     isExportingCsv = false,
@@ -160,9 +241,14 @@ class SettingsViewModel @Inject constructor(
             }
 
             if (result.isFailure) {
+                val messageResId = if (result.exceptionOrNull() is IncompatibleBackupException) {
+                    R.string.settings_restore_incompatible
+                } else {
+                    R.string.settings_restore_failed
+                }
                 transientState.value = transientState.value.copy(
                     isRestoring = false,
-                    restoreMessageResId = R.string.settings_restore_failed,
+                    restoreMessageResId = messageResId,
                 )
                 onCompleted(false)
             }
@@ -182,7 +268,7 @@ class SettingsViewModel @Inject constructor(
             )
             val messageResId = runCatching {
                 transactionRepository.clearAll()
-                userPreferencesRepository.clearLastUsedPaymentMethodId()
+                userPreferencesRepository.clearAll()
                 R.string.settings_clear_data_success
             }.getOrDefault(R.string.settings_clear_data_failed)
 

@@ -3,6 +3,7 @@ package com.example.expensetracker.ui.settings
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,14 +16,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,8 +46,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.expensetracker.BuildConfig
 import com.example.expensetracker.R
 import com.example.expensetracker.common.AppRestarter
-import com.example.expensetracker.common.CurrencyFormatter
 import com.example.expensetracker.ui.components.SectionCard
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 @Composable
 fun SettingsRoute(
@@ -87,7 +93,11 @@ fun SettingsRoute(
     SettingsScreen(
         contentPadding = contentPadding,
         uiState = uiState,
-        onCurrencySelected = viewModel::selectCurrency,
+        onAddAccount = viewModel::addAccount,
+        onUpdateAccount = viewModel::updateAccount,
+        onDeleteAccount = viewModel::deleteAccount,
+        onSaveBudget = viewModel::saveBudget,
+        onDeleteBudget = viewModel::deleteBudget,
         onExportCsvClick = {
             exportLauncher.launch(context.getString(R.string.settings_export_csv_filename))
         },
@@ -105,7 +115,11 @@ fun SettingsRoute(
 private fun SettingsScreen(
     contentPadding: PaddingValues,
     uiState: SettingsUiState,
-    onCurrencySelected: (String) -> Unit,
+    onAddAccount: (String, Long) -> Unit,
+    onUpdateAccount: (Long, String, Long) -> Unit,
+    onDeleteAccount: (Long) -> Unit,
+    onSaveBudget: (Long?, Long) -> Unit,
+    onDeleteBudget: (Long) -> Unit,
     onExportCsvClick: () -> Unit,
     onBackupClick: () -> Unit,
     onRestoreClick: () -> Unit,
@@ -113,7 +127,12 @@ private fun SettingsScreen(
 ) {
     var showClearDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
-    var showCurrencyOptions by remember { mutableStateOf(false) }
+    var showAccountDialog by remember { mutableStateOf(false) }
+    var editingAccount by remember { mutableStateOf<AccountUiModel?>(null) }
+    var deletingAccountId by remember { mutableStateOf<Long?>(null) }
+    var showBudgetDialog by remember { mutableStateOf(false) }
+    var editingBudget by remember { mutableStateOf<BudgetUiModel?>(null) }
+    var deletingBudgetId by remember { mutableStateOf<Long?>(null) }
 
     Column(
         modifier = Modifier
@@ -123,41 +142,158 @@ private fun SettingsScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SectionCard(title = stringResource(id = R.string.settings_currency_title)) {
+        SectionCard(title = stringResource(id = R.string.settings_account_title)) {
             Text(
-                text = stringResource(id = R.string.settings_currency_description),
+                text = stringResource(id = R.string.settings_account_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                text = CurrencyFormatter.formatCent(
-                    amountInCent = 12345,
-                    currencyCode = uiState.selectedCurrencyCode,
-                ),
-                modifier = Modifier.padding(top = 12.dp),
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            CurrencySelectorSummary(
-                selectedCurrencyCode = uiState.selectedCurrencyCode,
-                expanded = showCurrencyOptions,
-                onClick = { showCurrencyOptions = !showCurrencyOptions },
-            )
-            if (showCurrencyOptions) {
+            if (uiState.accounts.isNotEmpty()) {
+                var totalVisible by remember { mutableStateOf(false) }
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .clickable { totalVisible = !totalVisible },
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                    shape = MaterialTheme.shapes.large,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.settings_account_total),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = if (totalVisible) uiState.totalBalanceText else "****",
+                                modifier = Modifier.animateContentSize(),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Icon(
+                                imageVector = if (totalVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+            if (uiState.accounts.isEmpty()) {
+                Text(
+                    text = stringResource(id = R.string.settings_account_empty),
+                    modifier = Modifier.padding(top = 12.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                var expanded by remember { mutableStateOf(false) }
+                val visibleAccounts = if (expanded) uiState.accounts else uiState.accounts.take(2)
+
                 Column(
                     modifier = Modifier.padding(top = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    currencyOptions.forEach { option ->
-                        CurrencyOptionRow(
-                            option = option,
-                            selected = option.code == uiState.selectedCurrencyCode,
+                    visibleAccounts.forEach { account ->
+                        AccountItem(
+                            account = account,
                             onClick = {
-                                onCurrencySelected(option.code)
-                                showCurrencyOptions = false
+                                editingAccount = account
+                                showAccountDialog = true
                             },
+                            onDeleteClick = { deletingAccountId = account.id },
+                        )
+                    }
+                    if (uiState.accounts.size > 2) {
+                        TextButton(
+                            onClick = { expanded = !expanded },
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                        ) {
+                            Text(
+                                text = if (expanded) {
+                                    stringResource(id = R.string.settings_account_collapse)
+                                } else {
+                                    stringResource(id = R.string.settings_account_expand, uiState.accounts.size)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            Button(
+                onClick = {
+                    editingAccount = null
+                    showAccountDialog = true
+                },
+                modifier = Modifier.padding(top = 12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .size(18.dp),
+                )
+                Text(text = stringResource(id = R.string.settings_account_add))
+            }
+        }
+
+        SectionCard(title = stringResource(id = R.string.settings_budget_title)) {
+            Text(
+                text = stringResource(id = R.string.settings_budget_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (uiState.budgets.isEmpty()) {
+                Text(
+                    text = stringResource(id = R.string.settings_budget_empty),
+                    modifier = Modifier.padding(top = 12.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(
+                    modifier = Modifier.padding(top = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    uiState.budgets.forEach { budget ->
+                        BudgetItem(
+                            budget = budget,
+                            onClick = {
+                                editingBudget = budget
+                                showBudgetDialog = true
+                            },
+                            onDeleteClick = { deletingBudgetId = budget.id },
                         )
                     }
                 }
+            }
+            Button(
+                onClick = {
+                    editingBudget = null
+                    showBudgetDialog = true
+                },
+                modifier = Modifier.padding(top = 12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .size(18.dp),
+                )
+                Text(text = stringResource(id = R.string.settings_budget_add))
             }
         }
 
@@ -362,20 +498,94 @@ private fun SettingsScreen(
             },
         )
     }
+
+    if (showAccountDialog) {
+        AccountDialog(
+            editing = editingAccount,
+            onDismiss = { showAccountDialog = false },
+            onSave = { name, balanceInCent ->
+                val existing = editingAccount
+                if (existing != null) {
+                    onUpdateAccount(existing.id, name, balanceInCent)
+                } else {
+                    onAddAccount(name, balanceInCent)
+                }
+                showAccountDialog = false
+            },
+        )
+    }
+
+    deletingAccountId?.let { accountId ->
+        AlertDialog(
+            onDismissRequest = { deletingAccountId = null },
+            title = { Text(text = stringResource(id = R.string.settings_account_delete_confirm_title)) },
+            text = { Text(text = stringResource(id = R.string.settings_account_delete_confirm_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteAccount(accountId)
+                        deletingAccountId = null
+                    },
+                ) {
+                    Text(text = stringResource(id = R.string.settings_account_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingAccountId = null }) {
+                    Text(text = stringResource(id = R.string.action_cancel))
+                }
+            },
+        )
+    }
+
+    if (showBudgetDialog) {
+        BudgetDialog(
+            editing = editingBudget,
+            existingBudgets = uiState.budgets,
+            categoryOptions = uiState.categoryOptions,
+            onDismiss = { showBudgetDialog = false },
+            onSave = { categoryId, amountInCent ->
+                onSaveBudget(categoryId, amountInCent)
+                showBudgetDialog = false
+            },
+        )
+    }
+
+    deletingBudgetId?.let { budgetId ->
+        AlertDialog(
+            onDismissRequest = { deletingBudgetId = null },
+            title = { Text(text = stringResource(id = R.string.settings_budget_delete_confirm_title)) },
+            text = { Text(text = stringResource(id = R.string.settings_budget_delete_confirm_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteBudget(budgetId)
+                        deletingBudgetId = null
+                    },
+                ) {
+                    Text(text = stringResource(id = R.string.settings_budget_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingBudgetId = null }) {
+                    Text(text = stringResource(id = R.string.action_cancel))
+                }
+            },
+        )
+    }
 }
 
 @Composable
-private fun CurrencySelectorSummary(
-    selectedCurrencyCode: String,
-    expanded: Boolean,
+private fun AccountItem(
+    account: AccountUiModel,
     onClick: () -> Unit,
+    onDeleteClick: () -> Unit,
 ) {
-    val selectedOption = currencyOptions.firstOrNull { it.code == selectedCurrencyCode }
+    var balanceVisible by remember { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 12.dp)
             .clickable(onClick = onClick),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
         shape = MaterialTheme.shapes.large,
@@ -392,46 +602,284 @@ private fun CurrencySelectorSummary(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = stringResource(id = R.string.settings_currency_current_label),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = selectedOption?.let { stringResource(id = it.labelResId) }
-                        ?: selectedCurrencyCode,
+                    text = account.name,
                     style = MaterialTheme.typography.bodyLarge,
                 )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = stringResource(
+                            id = R.string.settings_account_balance,
+                            if (balanceVisible) account.balanceText else "****",
+                        ),
+                        modifier = Modifier.animateContentSize(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Icon(
+                        imageVector = if (balanceVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clickable { balanceVisible = !balanceVisible },
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-            Icon(
-                imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                contentDescription = stringResource(id = R.string.settings_currency_expand),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            IconButton(onClick = onDeleteClick) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = stringResource(id = R.string.settings_account_delete),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun CurrencyOptionRow(
-    option: CurrencyOptionUiModel,
-    selected: Boolean,
-    onClick: () -> Unit,
+private fun AccountDialog(
+    editing: AccountUiModel?,
+    onDismiss: () -> Unit,
+    onSave: (String, Long) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        RadioButton(
-            selected = selected,
-            onClick = onClick,
-        )
-        Text(
-            text = stringResource(id = option.labelResId),
-            style = MaterialTheme.typography.bodyLarge,
+    var name by remember(editing) { mutableStateOf(editing?.name.orEmpty()) }
+    var balanceText by remember(editing) {
+        mutableStateOf(
+            if (editing != null) {
+                BigDecimal(editing.balanceInCent)
+                    .divide(BigDecimal(100))
+                    .setScale(2, RoundingMode.HALF_UP)
+                    .toPlainString()
+            } else {
+                ""
+            }
         )
     }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(
+                    id = if (editing != null) {
+                        R.string.settings_account_dialog_edit_title
+                    } else {
+                        R.string.settings_account_dialog_add_title
+                    },
+                ),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(text = stringResource(id = R.string.settings_account_name_hint)) },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = balanceText,
+                    onValueChange = { value ->
+                        balanceText = value.filter { it.isDigit() || it == '.' || it == '-' }.let { text ->
+                            val firstDot = text.indexOf('.')
+                            if (firstDot < 0) {
+                                text
+                            } else {
+                                val integerPart = text.substring(0, firstDot + 1)
+                                val decimalPart = text.substring(firstDot + 1).replace(".", "").take(2)
+                                integerPart + decimalPart
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(text = stringResource(id = R.string.settings_account_balance_hint)) },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val trimmedName = name.trim()
+                    if (trimmedName.isBlank()) return@TextButton
+                    val balanceInCent = runCatching {
+                        BigDecimal(balanceText.ifBlank { "0" })
+                            .multiply(BigDecimal(100))
+                            .setScale(0, RoundingMode.HALF_UP)
+                            .longValueExact()
+                    }.getOrDefault(0L)
+                    onSave(trimmedName, balanceInCent)
+                },
+            ) {
+                Text(text = stringResource(id = R.string.settings_account_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(id = R.string.action_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun BudgetItem(
+    budget: BudgetUiModel,
+    onClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = budget.categoryName
+                        ?: stringResource(id = R.string.settings_budget_total_label),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = budget.amountText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onDeleteClick) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = stringResource(id = R.string.settings_budget_delete),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BudgetDialog(
+    editing: BudgetUiModel?,
+    existingBudgets: List<BudgetUiModel>,
+    categoryOptions: List<CategoryOptionUiModel>,
+    onDismiss: () -> Unit,
+    onSave: (Long?, Long) -> Unit,
+) {
+    var selectedCategoryId by remember(editing) { mutableStateOf(editing?.categoryId) }
+    var amountText by remember(editing) {
+        mutableStateOf(
+            if (editing != null) {
+                BigDecimal(editing.amountInCent)
+                    .divide(BigDecimal(100))
+                    .setScale(2, RoundingMode.HALF_UP)
+                    .toPlainString()
+            } else {
+                ""
+            },
+        )
+    }
+
+    val isEditing = editing != null
+    val usedCategoryIds = existingBudgets
+        .filter { it.id != (editing?.id ?: -1) }
+        .map { it.categoryId }
+    val hasTotalBudget = null in usedCategoryIds
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(
+                    id = if (isEditing) {
+                        R.string.settings_budget_dialog_edit_title
+                    } else {
+                        R.string.settings_budget_dialog_add_title
+                    },
+                ),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (!isEditing) {
+                    Text(
+                        text = stringResource(id = R.string.settings_budget_type_label),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (!hasTotalBudget) {
+                            FilterChip(
+                                selected = selectedCategoryId == null,
+                                onClick = { selectedCategoryId = null },
+                                label = { Text(text = stringResource(id = R.string.settings_budget_type_total)) },
+                            )
+                        }
+                        categoryOptions
+                            .filter { it.id !in usedCategoryIds }
+                            .forEach { category ->
+                                FilterChip(
+                                    selected = selectedCategoryId == category.id,
+                                    onClick = { selectedCategoryId = category.id },
+                                    label = { Text(text = category.name) },
+                                )
+                            }
+                    }
+                }
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { value ->
+                        amountText = value.filter { it.isDigit() || it == '.' }.let { text ->
+                            val firstDot = text.indexOf('.')
+                            if (firstDot < 0) {
+                                text
+                            } else {
+                                val integerPart = text.substring(0, firstDot + 1)
+                                val decimalPart = text.substring(firstDot + 1).replace(".", "").take(2)
+                                integerPart + decimalPart
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(text = stringResource(id = R.string.settings_budget_amount_hint)) },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val amountInCent = runCatching {
+                        BigDecimal(amountText.ifBlank { "0" })
+                            .multiply(BigDecimal(100))
+                            .setScale(0, RoundingMode.HALF_UP)
+                            .longValueExact()
+                    }.getOrDefault(0L)
+                    if (amountInCent > 0) {
+                        onSave(selectedCategoryId, amountInCent)
+                    }
+                },
+            ) {
+                Text(text = stringResource(id = R.string.settings_budget_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(id = R.string.action_cancel))
+            }
+        },
+    )
 }
